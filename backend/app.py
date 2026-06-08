@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from werkzeug.utils import secure_filename
 import os
+import json
 import uuid
 import threading
 import time
@@ -11,20 +12,6 @@ import shutil
 from datetime import datetime
 from shot_detector_video import BasketballShotDetector
 from video_processor import VideoProcessor
-
-import sys
-import codecs
-
-# Force console to use UTF-8
-if sys.platform.startswith('win'):
-    # Check if stdout/stderr are attached to a terminal before replacing
-    if sys.stdout.encoding.lower() != 'utf-8':
-        try:
-            sys.stdout.reconfigure(encoding='utf-8')
-            sys.stderr.reconfigure(encoding='utf-8')
-        except AttributeError:
-            # For older Python versions or wrapped streams
-            pass
 
 # 配置日志
 logging.basicConfig(
@@ -37,9 +24,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+BACKEND_HOST = os.getenv('BACKEND_HOST', '127.0.0.1')
+BACKEND_PORT = int(os.getenv('BACKEND_PORT', '5050'))
+FRONTEND_PORT = os.getenv('FRONTEND_PORT', '5173')
+DEBUG_KEEP_ARTIFACTS = os.getenv('DEBUG_KEEP_ARTIFACTS', '').strip().lower() in {
+    '1',
+    'true',
+    'yes',
+    'on',
+}
+
 app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+LOCAL_FRONTEND_ORIGINS = list({
+    f'http://127.0.0.1:{FRONTEND_PORT}',
+    f'http://localhost:{FRONTEND_PORT}',
+})
+CORS(app, origins=LOCAL_FRONTEND_ORIGINS)
+socketio = SocketIO(app, cors_allowed_origins=LOCAL_FRONTEND_ORIGINS, async_mode='threading')
 
 # 绝对路径基准
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,11 +51,12 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 OUTPUT_FOLDER = os.path.join(BASE_DIR, 'outputs')
 TEMP_FOLDER = os.path.join(BASE_DIR, 'temp')
 CHUNKS_FOLDER = os.path.join(TEMP_FOLDER, 'chunks')
+TASK_METADATA_FOLDER = os.path.join(TEMP_FOLDER, 'task_metadata')
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm', 'flv', 'wmv'}
 MAX_FILE_SIZE = 2048 * 1024 * 1024  # 2GB (increased for large video files)
 
 # 创建必要的目录
-for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, TEMP_FOLDER, CHUNKS_FOLDER]:
+for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, TEMP_FOLDER, CHUNKS_FOLDER, TASK_METADATA_FOLDER]:
     os.makedirs(folder, exist_ok=True)
     logger.info(f"确保目录存在: {folder}")
 
@@ -77,6 +79,60 @@ def validate_file_size(file_path):
     if file_size > MAX_FILE_SIZE:
         raise ValueError(f"文件大小 {file_size / (1024*1024):.1f}MB 超过限制 {MAX_FILE_SIZE / (1024*1024):.0f}MB")
     return file_size
+
+def validate_target_player_box(raw_box):
+    """验证目标人物选区，使用原始像素坐标和选中时间点保存。"""
+    if raw_box is None:
+        return None
+
+    if not isinstance(raw_box, dict):
+        raise ValueError('targetPlayerBox 必须是对象')
+
+    required_fields = ['x', 'y', 'width', 'height', 'frameWidth', 'frameHeight', 'selectionTime']
+    box = {}
+
+    for field in required_fields:
+        value = raw_box.get(field)
+        if not isinstance(value, (int, float)):
+            raise ValueError(f'targetPlayerBox.{field} 必须是数字')
+        box[field] = float(value)
+
+    if box['width'] < 20 or box['height'] < 20:
+        raise ValueError('targetPlayerBox 过小，请重新框选人物区域')
+
+    if box['frameWidth'] <= 0 or box['frameHeight'] <= 0:
+        raise ValueError('targetPlayerBox 画面尺寸无效')
+
+    if box['selectionTime'] < 0:
+        raise ValueError('targetPlayerBox.selectionTime 不能为负数')
+
+    if box['x'] < 0 or box['y'] < 0:
+        raise ValueError('targetPlayerBox 坐标不能为负数')
+
+    if box['x'] + box['width'] > box['frameWidth'] or box['y'] + box['height'] > box['frameHeight']:
+        raise ValueError('targetPlayerBox 超出当前画面范围')
+
+    normalized_box = {
+        'x': int(round(box['x'])),
+        'y': int(round(box['y'])),
+        'width': int(round(box['width'])),
+        'height': int(round(box['height'])),
+        'frameWidth': int(round(box['frameWidth'])),
+        'frameHeight': int(round(box['frameHeight'])),
+        'selectionTime': round(box['selectionTime'], 3),
+    }
+
+    selection_frame = raw_box.get('selectionFrame')
+    if isinstance(selection_frame, (int, float)) and selection_frame >= 0:
+        normalized_box['selectionFrame'] = int(round(selection_frame))
+
+    return normalized_box
+
+def save_task_metadata(task_id, metadata):
+    metadata_path = os.path.join(TASK_METADATA_FOLDER, f'{task_id}.json')
+    with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
+        json.dump(metadata, metadata_file, ensure_ascii=False, indent=2)
+    return metadata_path
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
@@ -170,25 +226,19 @@ def upload_video():
 def init_upload():
     """初始化分块上传"""
     try:
-        # Debug: Print request info
-        print(f"Init upload request: headers={request.headers}", file=sys.stderr)
-        
         data = request.get_json(silent=True)
         if data is None:
-             print("Request body is not JSON", file=sys.stderr)
              return jsonify({'success': False, 'error': 'Invalid JSON body'}), 400
              
         filename = data.get('filename')
         
         if not filename:
-            print("Filename missing in request", file=sys.stderr)
             return jsonify({'success': False, 'error': 'Filename required'}), 400
             
         file_id = str(uuid.uuid4())
         upload_dir = os.path.join(app.config['CHUNKS_FOLDER'], file_id)
         os.makedirs(upload_dir, exist_ok=True)
-        
-        print(f"Upload initialized: {file_id}, dir={upload_dir}", file=sys.stderr)
+        logger.info(f"分块上传已初始化: file_id={file_id}, upload_dir={upload_dir}")
         
         return jsonify({
             'success': True,
@@ -257,6 +307,7 @@ def complete_upload():
         # Clean up chunks
         shutil.rmtree(chunks_dir)
         
+        validate_file_size(final_path)
         file_size = os.path.getsize(final_path)
         logger.info(f"File merged successfully: {final_path}, size: {file_size}")
         
@@ -291,6 +342,7 @@ def process_video():
         file_id = data['fileId']
         before_seconds = data.get('beforeSeconds', 3)
         after_seconds = data.get('afterSeconds', 1)
+        target_player_box = validate_target_player_box(data.get('targetPlayerBox'))
         
         # 验证参数
         if not isinstance(before_seconds, (int, float)) or before_seconds < 1 or before_seconds > 30:
@@ -327,6 +379,15 @@ def process_video():
         
         # 生成任务ID
         task_id = str(uuid.uuid4())
+        task_metadata = {
+            'taskId': task_id,
+            'fileId': file_id,
+            'beforeSeconds': before_seconds,
+            'afterSeconds': after_seconds,
+            'targetPlayerBox': target_player_box,
+            'createdAt': datetime.now().isoformat(),
+        }
+        metadata_path = save_task_metadata(task_id, task_metadata)
         
         logger.info(f"创建处理任务: {task_id}, 文件: {uploaded_files[0]}, 参数: before={before_seconds}s, after={after_seconds}s")
         
@@ -341,7 +402,9 @@ def process_video():
             'file_id': file_id,
             'input_path': input_path,
             'before_seconds': before_seconds,
-            'after_seconds': after_seconds
+            'after_seconds': after_seconds,
+            'target_player_box': target_player_box,
+            'metadata_path': metadata_path,
         }
         
         # 启动后台处理线程
@@ -407,6 +470,7 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         # 初始化检测器
         logger.info(f"初始化篮球检测器，模型: {model_path}")
         detector = BasketballShotDetector(model_path=model_path)
+        target_player_box = processing_tasks[task_id].get('target_player_box')
         
         # 进度回调函数
         def progress_callback(current_frame, total_frames):
@@ -419,22 +483,48 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         
         # 检测进球
         logger.info(f"开始检测进球，文件: {input_path}")
+        annotated_filename = f"{task_id}_annotated.mp4"
+        annotated_output_path = os.path.join(app.config['OUTPUT_FOLDER'], annotated_filename)
+
         result = detector.detect_shots_with_clips(
             input_path,
             before_seconds=before_seconds,
             after_seconds=after_seconds,
             progress_callback=progress_callback,
             annotate=True,
-            annotated_output_path=os.path.join(app.config['TEMP_FOLDER'], f"{task_id}_annotated.mp4")
+            annotated_output_path=annotated_output_path,
+            target_player_box=target_player_box,
         )
 
-        if result.get('made_shots'):
-            for i, t in enumerate(result['made_shots'], start=1):
+        selected_made_shots = result.get('selected_made_shots', result.get('made_shots', []))
+        tracking_summary = result.get('tracking', {'enabled': False})
+        target_scores = result['stats'].get('target_scores', 0)
+        target_assists = result['stats'].get('target_assists', 0)
+        target_highlights = result['stats'].get('target_highlights', target_scores + target_assists)
+        debug_result = {
+            'debugArtifactsKept': DEBUG_KEEP_ARTIFACTS,
+        }
+        if DEBUG_KEEP_ARTIFACTS:
+            debug_result['allShots'] = result.get('shots', [])
+            debug_result['annotatedVideo'] = (
+                os.path.basename(result['annotated_video'])
+                if result.get('annotated_video')
+                else None
+            )
+
+        if selected_made_shots:
+            for i, t in enumerate(selected_made_shots, start=1):
                 try:
-                    msg = f"检测到投篮 #{i} - 帧: {t['frame']}, 时间: {float(t['timestamp']):.2f}s, 进球"
+                    role = t.get('highlight_role')
+                    role_label = '你的进球' if role == 'score' else '你的助攻' if role == 'assist' else '个人高光'
+                    msg = (
+                        f"检测到高光 #{i} - 帧: {t['frame']}, 时间: {float(t['timestamp']):.2f}s, {role_label}"
+                    )
                     update_task_progress(task_id, log=msg)
                 except Exception:
                     pass
+        elif target_player_box and result.get('made_shots'):
+            update_task_progress(task_id, log='检测到进球，但未归因到你的进球或助攻')
         
         logger.info(f"检测完成，结果: 总投篮 {result['stats']['total_attempts']}, 进球 {result['stats']['total_makes']}, 命中率 {result['stats']['accuracy']:.1f}%")
         
@@ -452,14 +542,14 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         # 处理视频：生成集锦
         processor = VideoProcessor()
         
-        if result['made_shots']:
+        if selected_made_shots:
             # 有进球，生成集锦
-            logger.info(f"生成集锦视频，进球数量: {len(result['made_shots'])}")
-            # 若存在标注视频，优先从标注视频中剪辑，确保集锦包含红框与蓝色轨迹
-            source_video_for_clips = result.get('annotated_video') or input_path
+            logger.info(f"生成集锦视频，片段数量: {len(selected_made_shots)}")
+            # 集锦始终从原视频剪辑，保留原始音频；标注视频仅用于调试。
+            source_video_for_clips = input_path
             video_result = processor.process_video_full_pipeline(
                 video_path=source_video_for_clips,
-                timestamps=result['made_shots'],
+                timestamps=selected_made_shots,
                 output_path=output_path,
                 before=before_seconds,
                 after=after_seconds,
@@ -485,15 +575,29 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'totalShots': result['stats']['total_attempts'],
                     'madeShots': result['stats']['total_makes'],
                     'accuracy': result['stats']['accuracy'],
+                    'targetShots': target_scores,
+                    'targetScores': target_scores,
+                    'targetAssists': target_assists,
+                    'targetHighlights': target_highlights,
                     'highlightVideo': output_filename,
-                    'annotatedVideo': os.path.basename(source_video_for_clips) if result.get('annotated_video') else None,
-                    'timestamps': result['made_shots'],
-                    'fileSize': file_size
+                    'annotatedVideo': os.path.basename(result['annotated_video']) if result.get('annotated_video') else None,
+                    'timestamps': selected_made_shots,
+                    'allMadeTimestamps': result['made_shots'],
+                    'fileSize': file_size,
+                    'targetPlayerBox': processing_tasks[task_id].get('target_player_box'),
+                    'tracking': tracking_summary,
+                    **debug_result,
                 }
             )
         else:
             # 没有检测到进球
-            logger.info("未检测到进球")
+            logger.info("未检测到可用于集锦的个人高光")
+            message = '未检测到进球，请检查视频内容或调整参数'
+            if target_player_box:
+                if result['made_shots']:
+                    message = '检测到全场进球，但当前规则未将其归因到你的进球或助攻，请检查选区或人物出场时机'
+                else:
+                    message = '人物跟踪正常，但当前未识别出全场进球，请检查机位、清晰度或进球识别规则'
             update_task_progress(task_id,
                 status='completed',
                 progress=100,
@@ -502,25 +606,30 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'totalShots': result['stats']['total_attempts'],
                     'madeShots': result['stats']['total_makes'],
                     'accuracy': result['stats']['accuracy'],
+                    'targetShots': target_scores,
+                    'targetScores': target_scores,
+                    'targetAssists': target_assists,
+                    'targetHighlights': target_highlights,
                     'highlightVideo': None,
-                    'message': '未检测到进球，请检查视频内容或调整参数'
+                    'annotatedVideo': os.path.basename(result['annotated_video']) if result.get('annotated_video') else None,
+                    'message': message,
+                    'targetPlayerBox': processing_tasks[task_id].get('target_player_box'),
+                    'tracking': tracking_summary,
+                    'timestamps': selected_made_shots,
+                    'allMadeTimestamps': result['made_shots'],
+                    **debug_result,
                 }
             )
-        
+
         # 清理上传的文件
-        try:
-            os.remove(input_path)
-            logger.info(f"清理上传文件: {input_path}")
-        except Exception as e:
-            logger.warning(f"清理上传文件失败: {e}")
-        # 清理临时标注视频
-        try:
-            annotated_tmp = os.path.join(app.config['TEMP_FOLDER'], f"{task_id}_annotated.mp4")
-            if os.path.exists(annotated_tmp):
-                os.remove(annotated_tmp)
-                logger.info(f"清理临时标注视频: {annotated_tmp}")
-        except Exception as e:
-            logger.warning(f"清理临时标注视频失败: {e}")
+        if DEBUG_KEEP_ARTIFACTS:
+            logger.info("DEBUG_KEEP_ARTIFACTS 已开启，保留上传文件用于排查")
+        else:
+            try:
+                os.remove(input_path)
+                logger.info(f"清理上传文件: {input_path}")
+            except Exception as e:
+                logger.warning(f"清理上传文件失败: {e}")
             
     except Exception as e:
         # 处理错误
@@ -637,7 +746,12 @@ def health_check():
         }
         
         # 检查是否有组件异常
-        if not all(health_status['components'].values()):
+        storage_ok = (
+            health_status['components']['upload_folder']
+            and health_status['components']['output_folder']
+            and health_status['components']['model_file']
+        )
+        if not storage_ok:
             health_status['status'] = 'degraded'
             health_status['message'] = '部分组件异常'
         
@@ -680,10 +794,12 @@ def start_cleanup_timer():
 if __name__ == '__main__':
     start_cleanup_timer()
     logger.info("Basketball Highlight Generator Service Starting...")
-    logger.info("API Service: http://localhost:5000")
-    logger.info("Health Check: http://localhost:5000/api/health")
-    # app.run(debug=True, host='0.0.0.0', port=5000)
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
-
-
-
+    logger.info(f"API Service: http://{BACKEND_HOST}:{BACKEND_PORT}")
+    logger.info(f"Health Check: http://{BACKEND_HOST}:{BACKEND_PORT}/api/health")
+    socketio.run(
+        app,
+        debug=True,
+        host=BACKEND_HOST,
+        port=BACKEND_PORT,
+        allow_unsafe_werkzeug=True,
+    )

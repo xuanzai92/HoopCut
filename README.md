@@ -8,7 +8,7 @@
 
 **🎯 基于AI的篮球视频自动剪辑系统**
 
-使用YOLOv8深度学习模型实现篮球进球自动检测和视频集锦生成的后端API服务。
+使用本地 YOLOv8 模型实现篮球进球自动检测和视频集锦生成。视频、模型推理、临时文件和输出结果都保存在本机。
 
 </div>
 
@@ -43,8 +43,22 @@ https://github.com/user-attachments/assets/8723aabc-38b1-4c8e-90a3-13d688a820bf
 ## 📋 系统要求
 
 - **Python 3.8+**
+- **Node.js 16+**
 - **FFmpeg** (用于视频处理)
-- **支持的视频格式**：MP4, AVI, MOV, MKV
+- **支持的视频格式**：MP4, AVI, MOV, MKV, WebM, FLV, WMV
+
+## 🖥️ 本地处理模式
+
+HoopCut 当前按完全本地模式运行：
+
+- 前端地址：`http://127.0.0.1:5173`
+- 后端 API：默认 `http://127.0.0.1:5050` 起，会自动选择一个可用本地端口
+- 本地模型：`backend/best.pt`
+- 上传目录：`backend/uploads/`
+- 临时目录：`backend/temp/`
+- 输出目录：`backend/outputs/`
+
+后端只监听 `127.0.0.1`，不会把处理服务暴露到局域网。
 
 ## 🚀 快速开始
 
@@ -53,34 +67,31 @@ https://github.com/user-attachments/assets/8723aabc-38b1-4c8e-90a3-13d688a820bf
 git clone <repository-url>
 cd HoopCut
 
-# 进入后端目录
+# 自动创建 backend/venv、安装依赖，并选择一个可用后端端口
+./start-local.sh
+```
+
+### 手动启动
+
+```bash
+# 启动后端
 cd backend
 
-# 创建虚拟环境
-python -m venv venv
+python3 -m venv venv
 
-# 激活虚拟环境 (Windows)
-venv\Scripts\activate
-# 或 (Linux/macOS)
 source venv/bin/activate
 
-# 安装依赖
 pip install -r requirements.txt
+BACKEND_PORT=5050 FRONTEND_PORT=5173 venv/bin/python app.py
 
-# 启动后端服务(测试阶段)
-python test_full_pipeline.py
-
-# 返回项目根目录
-cd ..
-
-# 进入前端目录
+# 新开终端启动前端
 cd frontend
 
-# 安装依赖
 npm install
-
-# 启动开发服务器
-npm run dev
+VITE_PROXY_TARGET=http://127.0.0.1:5050 \
+VITE_API_BASE_URL= \
+VITE_SOCKET_URL= \
+npm run dev -- --host 127.0.0.1 --port 5173
 
 ```
 
@@ -121,20 +132,59 @@ HoopCut/
 
 ## 📡 API接口
 
-### 上传视频并处理
+### 分块上传初始化
 ```bash
-POST /api/upload
+POST /api/upload/init
+Content-Type: application/json
+
+{
+  "filename": "demo.mp4"
+}
+```
+
+### 上传分块
+```bash
+POST /api/upload/chunk
 Content-Type: multipart/form-data
 
 # 参数
-- file: 视频文件 (MP4, AVI, MOV, MKV)
-- before_time: 进球前保留时间 (默认8秒)
-- after_time: 进球后保留时间 (默认2秒)
+- chunk: 视频分块
+- fileId: 上传初始化返回的文件 ID
+- chunkIndex: 分块序号，从 0 开始
+```
+
+### 完成分块上传
+```bash
+POST /api/upload/complete
+Content-Type: application/json
+
+{
+  "fileId": "...",
+  "filename": "demo.mp4",
+  "totalChunks": 12
+}
+```
+
+### 启动本地处理
+```bash
+POST /api/process
+Content-Type: application/json
+
+{
+  "fileId": "...",
+  "beforeSeconds": 3,
+  "afterSeconds": 1
+}
 ```
 
 ### 获取处理状态
 ```bash
-GET /api/status/{task_id}
+GET /api/progress/{task_id}
+```
+
+### 播放集锦视频
+```bash
+GET /api/stream/{filename}
 ```
 
 ### 下载集锦视频

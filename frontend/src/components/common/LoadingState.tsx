@@ -1,10 +1,5 @@
-/**
- * 加载状态组件
- * 用于显示不同类型的加载状态
- */
 import React from 'react';
-import { Spin, Skeleton, Card } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
+import { Card, Spinner } from '@heroui/react';
 
 interface LoadingStateProps {
   type?: 'spin' | 'skeleton' | 'card' | 'page';
@@ -13,10 +8,13 @@ interface LoadingStateProps {
   size?: 'small' | 'default' | 'large';
   children?: React.ReactNode;
   className?: string;
-  rows?: number;
-  avatar?: boolean;
-  title?: boolean;
 }
+
+const spinnerSizeMap = {
+  small: 'sm',
+  default: 'md',
+  large: 'lg',
+} as const;
 
 const LoadingState: React.FC<LoadingStateProps> = ({
   type = 'spin',
@@ -25,9 +23,6 @@ const LoadingState: React.FC<LoadingStateProps> = ({
   size = 'default',
   children,
   className = '',
-  rows = 3,
-  avatar = false,
-  title = true,
 }) => {
   if (!loading && children) {
     return <>{children}</>;
@@ -37,62 +32,32 @@ const LoadingState: React.FC<LoadingStateProps> = ({
     return null;
   }
 
-  const renderLoading = () => {
-    switch (type) {
-      case 'skeleton':
-        return (
-          <Skeleton
-            active
-            avatar={avatar}
-            title={title}
-            paragraph={{ rows }}
-            className={className}
-          />
-        );
+  const content = (
+    <div className="flex flex-col items-center justify-center gap-4 p-8 text-center">
+      <Spinner size={spinnerSizeMap[size]} />
+      <div className="text-sm text-slate-500">{tip}</div>
+    </div>
+  );
 
-      case 'card':
-        return (
-          <Card className={className}>
-            <Skeleton
-              active
-              avatar={avatar}
-              title={title}
-              paragraph={{ rows }}
-            />
-          </Card>
-        );
+  if (type === 'page') {
+    return (
+      <div className={`flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#fff8f1_0%,#fffdf8_18%,#f8fafc_44%,#eef2ff_100%)] px-4 ${className}`}>
+        <Card className="w-full max-w-md border border-white/40 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.10)] backdrop-blur">
+          {content}
+        </Card>
+      </div>
+    );
+  }
 
-      case 'page':
-        return (
-          <div className={`min-h-screen bg-gray-50 flex items-center justify-center ${className}`}>
-            <div className="text-center">
-              <Spin
-                size={size}
-                indicator={<LoadingOutlined style={{ fontSize: 48 }} spin />}
-                tip={tip}
-              />
-              <div className="mt-4 text-gray-600">
-                {tip}
-              </div>
-            </div>
-          </div>
-        );
+  if (type === 'card' || type === 'skeleton') {
+    return (
+      <Card className={`border border-white/40 bg-white/80 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur ${className}`}>
+        {content}
+      </Card>
+    );
+  }
 
-      case 'spin':
-      default:
-        return (
-          <div className={`flex items-center justify-center p-8 ${className}`}>
-            <Spin
-              size={size}
-              indicator={<LoadingOutlined style={{ fontSize: size === 'large' ? 32 : size === 'small' ? 16 : 24 }} spin />}
-              tip={tip}
-            />
-          </div>
-        );
-    }
-  };
-
-  return renderLoading();
+  return <div className={className}>{content}</div>;
 };
 
 export default LoadingState;

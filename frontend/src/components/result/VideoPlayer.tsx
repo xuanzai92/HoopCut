@@ -1,19 +1,6 @@
-/**
- * 视频播放器组件
- */
-import React, { useRef, useState, useEffect } from 'react';
-import { Card, Button, Space, Slider, message, Tooltip } from 'antd';
-import {
-  PlayCircleOutlined,
-  PauseOutlined,
-  SoundOutlined,
-  MutedOutlined,
-  FullscreenOutlined,
-  FullscreenExitOutlined,
-  DownloadOutlined,
-  ShareAltOutlined,
-  ExpandOutlined,
-} from '@ant-design/icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button, Card, Toast } from '@heroui/react';
+import { Download, Expand, Maximize, Minimize, Pause, PictureInPicture2, Play, Share2, Volume2, VolumeX } from 'lucide-react';
 import { formatDuration } from '@/utils';
 
 interface VideoPlayerProps {
@@ -35,7 +22,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+  const controlsTimeoutRef = useRef<number | null>(null);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -44,9 +32,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showControls, setShowControls] = useState(true);
-  const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  // 初始化视频事件监听
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -56,14 +42,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsLoading(false);
     };
 
-    const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
-    };
-
+    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
-
     const handleVolumeChange = () => {
       setVolume(video.volume);
       setIsMuted(video.muted);
@@ -86,10 +68,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, []);
 
-  // 全屏状态监听
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      setIsFullscreen(Boolean(document.fullscreenElement));
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -98,282 +79,192 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, []);
 
-  // 控制栏自动隐藏
   useEffect(() => {
-    if (controlsTimeout) {
-      clearTimeout(controlsTimeout);
+    if (controlsTimeoutRef.current !== null) {
+      window.clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
     }
 
     if (isPlaying && showControls) {
-      const timeout = setTimeout(() => {
+      controlsTimeoutRef.current = window.setTimeout(() => {
         setShowControls(false);
-      }, 3000);
-      setControlsTimeout(timeout);
+      }, 2500);
     }
 
     return () => {
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
+      if (controlsTimeoutRef.current !== null) {
+        window.clearTimeout(controlsTimeoutRef.current);
       }
     };
   }, [isPlaying, showControls]);
 
-  // 播放/暂停
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
 
     if (isPlaying) {
       video.pause();
-    } else {
-      video.play().catch(() => {
-        message.error('视频播放失败');
-      });
+      return;
     }
+
+    void video.play().catch(() => {
+      Toast.toast.danger('视频播放失败');
+    });
   };
 
-  // 跳转到指定时间
   const seekTo = (time: number) => {
     const video = videoRef.current;
     if (!video) return;
-    
     video.currentTime = time;
     setCurrentTime(time);
   };
 
-  // 调整音量
   const changeVolume = (value: number) => {
     const video = videoRef.current;
     if (!video) return;
-    
     video.volume = value;
+    video.muted = value === 0;
     setVolume(value);
     setIsMuted(value === 0);
   };
 
-  // 静音/取消静音
   const toggleMute = () => {
     const video = videoRef.current;
     if (!video) return;
-    
-    video.muted = !isMuted;
-    setIsMuted(!isMuted);
+    video.muted = !video.muted;
+    setIsMuted(video.muted);
   };
 
-  // 全屏/退出全屏
   const toggleFullscreen = async () => {
     const container = containerRef.current;
     if (!container) return;
 
     try {
-      if (isFullscreen) {
+      if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else {
         await container.requestFullscreen();
       }
-    } catch (error) {
-      message.error('全屏操作失败');
+    } catch {
+      Toast.toast.danger('全屏操作失败');
     }
   };
 
-  // 鼠标移动显示控制栏
-  const handleMouseMove = () => {
-    setShowControls(true);
-  };
+  const handleMouseMove = () => setShowControls(true);
 
-  // 键盘快捷键
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    switch (e.code) {
-      case 'Space':
-        e.preventDefault();
-        togglePlay();
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        seekTo(Math.max(0, currentTime - 10));
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        seekTo(Math.min(duration, currentTime + 10));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        changeVolume(Math.min(1, volume + 0.1));
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        changeVolume(Math.max(0, volume - 0.1));
-        break;
-      case 'KeyM':
-        e.preventDefault();
-        toggleMute();
-        break;
-      case 'KeyF':
-        e.preventDefault();
-        toggleFullscreen();
-        break;
+  const handlePictureInPicture = async () => {
+    const video = videoRef.current;
+    if (!video || !('requestPictureInPicture' in video)) {
+      Toast.toast.danger('当前浏览器不支持画中画');
+      return;
+    }
+
+    try {
+      await video.requestPictureInPicture();
+    } catch {
+      Toast.toast.danger('进入画中画失败');
     }
   };
 
   return (
-    <Card className={`video-player ${className}`} bodyStyle={{ padding: 0 }}>
-      {title && (
-        <div className="px-4 py-3 border-b">
-          <h3 className="text-lg font-semibold mb-0">{title}</h3>
+    <Card className={`overflow-hidden border border-white/10 bg-slate-950 text-white shadow-[0_35px_120px_rgba(15,23,42,0.45)] ${className}`}>
+      {title ? (
+        <div className="border-b border-white/10 px-5 py-4">
+          <h3 className="text-lg font-semibold">{title}</h3>
         </div>
-      )}
-      
+      ) : null}
+
       <div
         ref={containerRef}
         className={`relative bg-black ${isFullscreen ? 'h-screen' : 'aspect-video'}`}
         onMouseMove={handleMouseMove}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
       >
-        {/* 视频元素 */}
         <video
           ref={videoRef}
           src={src}
           poster={poster}
-          className="w-full h-full object-contain"
+          className="h-full w-full object-contain"
           preload="metadata"
           onClick={togglePlay}
         />
 
-        {/* 加载状态 */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="text-white text-lg">加载中...</div>
+        {isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-sm text-white/80">
+            正在加载视频...
           </div>
-        )}
+        ) : null}
 
-        {/* 播放按钮覆盖层 */}
-        {!isPlaying && !isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-            <Button
-              type="primary"
-              size="large"
-              shape="circle"
-              icon={<PlayCircleOutlined />}
+        {!isPlaying && !isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+            <button
+              type="button"
               onClick={togglePlay}
-              className="w-16 h-16 flex items-center justify-center text-2xl"
-            />
+              className="flex h-20 w-20 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white backdrop-blur transition hover:bg-white/15"
+            >
+              <Play size={34} />
+            </button>
           </div>
-        )}
+        ) : null}
 
-        {/* 控制栏 */}
         <div
-          className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4 transition-opacity duration-300 ${
-            showControls ? 'opacity-100' : 'opacity-0'
+          className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/75 to-transparent p-4 transition-opacity duration-300 ${
+            showControls ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
         >
-          {/* 进度条 */}
           <div className="mb-4">
-            <Slider
+            <input
+              type="range"
               min={0}
-              max={duration}
+              max={duration || 0}
+              step={0.1}
               value={currentTime}
-              onChange={seekTo}
-              tooltip={{
-                formatter: (value) => formatDuration(value || 0),
-              }}
-              className="video-progress-slider"
+              onChange={(event) => seekTo(Number(event.target.value))}
+              className="hero-range"
             />
           </div>
 
-          {/* 控制按钮 */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              {/* 播放/暂停 */}
-              <Button
-                type="text"
-                size="large"
-                icon={isPlaying ? <PauseOutlined /> : <PlayCircleOutlined />}
-                onClick={togglePlay}
-                className="text-white hover:text-blue-400"
-              />
-
-              {/* 音量控制 */}
-              <div className="flex items-center space-x-2">
-                <Button
-                  type="text"
-                  size="large"
-                  icon={isMuted || volume === 0 ? <MutedOutlined /> : <SoundOutlined />}
-                  onClick={toggleMute}
-                  className="text-white hover:text-blue-400"
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-white/85">
+              <Button variant="ghost" onClick={togglePlay}>
+                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+              </Button>
+              <Button variant="ghost" onClick={toggleMute}>
+                {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </Button>
+              <div className="w-24">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={isMuted ? 0 : volume}
+                  onChange={(event) => changeVolume(Number(event.target.value))}
+                  className="hero-range"
                 />
-                <div className="w-20">
-                  <Slider
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={isMuted ? 0 : volume}
-                    onChange={changeVolume}
-                    tooltip={{ formatter: (value) => `${Math.round((value || 0) * 100)}%` }}
-                  />
-                </div>
               </div>
-
-              {/* 时间显示 */}
-              <span className="text-white text-sm">
-                {formatDuration(currentTime)} / {formatDuration(duration)}
-              </span>
+              <span>{formatDuration(currentTime)} / {formatDuration(duration)}</span>
             </div>
 
-            <div className="flex items-center space-x-2">
-              {/* 下载按钮 */}
-              {onDownload && (
-                <Tooltip title="下载视频">
-                  <Button
-                    type="text"
-                    size="large"
-                    icon={<DownloadOutlined />}
-                    onClick={onDownload}
-                    className="text-white hover:text-blue-400"
-                  />
-                </Tooltip>
-              )}
-
-              {/* 分享按钮 */}
-              {onShare && (
-                <Tooltip title="分享视频">
-                  <Button
-                    type="text"
-                    size="large"
-                    icon={<ShareAltOutlined />}
-                    onClick={onShare}
-                    className="text-white hover:text-blue-400"
-                  />
-                </Tooltip>
-              )}
-
-              {/* 画中画 */}
-              <Tooltip title="画中画">
-                <Button
-                  type="text"
-                  size="large"
-                  icon={<ExpandOutlined />}
-                  onClick={() => {
-                    if (videoRef.current && 'requestPictureInPicture' in videoRef.current) {
-                      (videoRef.current as any).requestPictureInPicture().catch(() => {
-                        message.error('画中画模式不支持');
-                      });
-                    }
-                  }}
-                  className="text-white hover:text-blue-400"
-                />
-              </Tooltip>
-
-              {/* 全屏 */}
-              <Tooltip title={isFullscreen ? '退出全屏' : '全屏'}>
-                <Button
-                  type="text"
-                  size="large"
-                  icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                  onClick={toggleFullscreen}
-                  className="text-white hover:text-blue-400"
-                />
-              </Tooltip>
+            <div className="flex flex-wrap items-center gap-2">
+              {onDownload ? (
+                <Button variant="ghost" onClick={onDownload}>
+                  <Download size={16} />
+                </Button>
+              ) : null}
+              {onShare ? (
+                <Button variant="ghost" onClick={onShare}>
+                  <Share2 size={16} />
+                </Button>
+              ) : null}
+              <Button variant="ghost" onClick={() => void handlePictureInPicture()}>
+                <PictureInPicture2 size={16} />
+              </Button>
+              <Button variant="ghost" onClick={() => void toggleFullscreen()}>
+                {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+              </Button>
+              <Button variant="ghost" onClick={() => seekTo(Math.min(duration, currentTime + 10))}>
+                <Expand size={16} />
+              </Button>
             </div>
           </div>
         </div>

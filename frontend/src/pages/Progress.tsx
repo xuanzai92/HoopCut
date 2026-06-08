@@ -1,296 +1,284 @@
-/**
- * 处理进度页面
- */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Space, message, Result as AntResult } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Chip, EmptyState, Toast } from '@heroui/react';
+import { ArrowLeft, Download, Eye, RefreshCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-
 import { ProgressIndicator } from '@/components/progress/ProgressIndicator';
 import { StatusDisplay } from '@/components/progress/StatusDisplay';
-import { LoadingState, ErrorAlert } from '@/components/common';
+import { ErrorAlert, LoadingState } from '@/components/common';
 import { useErrorHandler, useLoading } from '@/hooks';
 import { useAppStore } from '@/store/app';
 import { useTaskProgress, QUERY_KEYS } from '@/services/queries';
 import { ApiService } from '@/services/api';
-import type { Task } from '@/types';
+import type { ProcessingStage, TaskStatus } from '@/types';
+import { HttpRequestError } from '@/services/http';
+
+const normalizeTaskStatus = (status: string): TaskStatus => {
+  if (status === 'completed' || status === 'failed' || status === 'pending') {
+    return status;
+  }
+  return 'processing';
+};
+
+const resolveProgressStage = (status: string, stageText?: string): ProcessingStage => {
+  if (status === 'detecting') {
+    return stageText?.includes('分析') ? 'analyzing' : 'detecting';
+  }
+  if (status === 'generating') return 'generating';
+  if (status === 'completed') return 'completed';
+  if (status === 'failed') return 'finalizing';
+  return 'uploading';
+};
+
+const isNotFoundError = (error: Error) => {
+  const status = (error as HttpRequestError).status;
+  return status === 404 || error.message.includes('资源不存在') || error.message.includes('404');
+};
 
 export const Progress: React.FC = () => {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
   const { addNotification } = useAppStore();
-  const [autoRefresh, setAutoRefresh] = useState(false); // Default to false as we use WebSocket
   const queryClient = useQueryClient();
-  
-  // 错误处理和加载状态
-  const { error, hasError, handleError, clearError, withErrorHandling } = useErrorHandler();
+  const lastStatusRef = useRef<string | null>(null);
+  const { error, hasError, clearError, withErrorHandling } = useErrorHandler();
   const { loading: retryLoading, withLoading } = useLoading();
 
-  // 获取任务进度 (Initial fetch)
   const {
     data: progress,
     isLoading,
     error: queryError,
     refetch,
-  } = useTaskProgress(fileId!, {
-    enabled: !!fileId,
-    refetchInterval: false, // Disable polling, use WebSocket
+  } = useTaskProgress(fileId ?? '', {
+    enabled: Boolean(fileId),
+    refetchInterval: false,
   });
 
-  // WebSocket connection
   useEffect(() => {
     if (!fileId) return;
 
-    // Initial fetch to make sure we have the latest state
-    refetch();
+    void refetch();
 
-    const socket = ApiService.connectWebSocket((data) => {
-      if (data.taskId === fileId) {
-        // Update React Query cache
-        queryClient.setQueryData(QUERY_KEYS.PROGRESS(fileId), data.data);
-        // 移除日志累积显示
-        
-        // Show notification on completion
-        if (data.data.status === 'completed' && !progress?.completed) {
-             addNotification({
-                type: 'success',
-                title: '处理完成',
-                message: '视频高光提取已完成，可以查看结果了！',
-              });
-             // 不再显示完成时的日志追加
-        } else if (data.data.status === 'failed' && progress?.status !== 'failed') {
-             addNotification({
-                type: 'error',
-                title: '处理失败',
-                message: data.data.stage || '视频处理过程中出现错误',
-              });
+    ApiService.connectWebSocket((data) => {
+      if (data.taskId !== fileId) return;
+
+      queryClient.setQueryData(QUERY_KEYS.PROGRESS(fileId), data.data);
+
+      if (data.data.status !== lastStatusRef.current) {
+        if (data.data.status === 'completed') {
+          addNotification({
+            type: 'success',
+            title: '处理完成',
+            message: '本地处理已完成，可以查看结果了。',
+          });
+        } else if (data.data.status === 'failed') {
+          addNotification({
+            type: 'error',
+            title: '处理失败',
+            message: data.data.error || data.data.stage || '视频处理过程中出现错误',
+          });
         }
+
+        lastStatusRef.current = data.data.status;
       }
     });
 
     return () => {
       ApiService.disconnectWebSocket();
     };
-  }, [fileId, queryClient, addNotification, refetch]);
+  }, [addNotification, fileId, queryClient, refetch]);
 
-  // 监听任务状态变化 (Local effects)
   useEffect(() => {
-    if (progress) {
-      if (progress.completed) {
-         // Task completed
-      }
+    if (progress?.status) {
+      lastStatusRef.current = progress.status;
     }
   }, [progress]);
 
-  // 处理重试
   const handleRetry = withLoading(
     withErrorHandling(async () => {
       if (!fileId) {
         throw new Error('文件ID不存在');
       }
-      
-      refetch();
-      message.success('已刷新任务状态');
-    })
+      await refetch();
+      Toast.toast.success('已刷新任务状态');
+    }),
   );
 
-  // 查看结果
-  const handleViewResult = () => {
-    if (progress?.completed && fileId) {
-      navigate(`/result/${fileId}`);
+  const handleDownloadResult = withErrorHandling(async () => {
+    const filename = progress?.result?.highlightVideo;
+    if (!filename) {
+      throw new Error('当前没有可下载的个人高光视频');
     }
-  };
 
-  // 返回首页
-  const handleGoBack = () => {
-    navigate('/');
-  };
-
-  // 手动刷新
-  const handleRefresh = withErrorHandling(async () => {
-    await refetch();
-    message.success('已刷新任务状态');
+    const url = ApiService.getDownloadUrl(filename);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `basketball_highlight_${filename}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    Toast.toast.success('已开始下载高光视频');
   });
 
-  // 错误状态
-  if (queryError) {
-    // 检查是否是404错误（任务不存在）
-    if (queryError.message?.includes('404')) {
-      return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <AntResult
-            status="404"
-            title="任务不存在"
-            subTitle="找不到指定的处理任务，可能已被删除或ID错误"
-            extra={
-              <Button type="primary" onClick={handleGoBack}>
-                返回首页
-              </Button>
-            }
-          />
-        </div>
-      );
-    }
+  const handleRefresh = withErrorHandling(async () => {
+    await refetch();
+    Toast.toast.success('已刷新任务状态');
+  });
 
+  const normalizedStatus = useMemo(
+    () => (progress ? normalizeTaskStatus(progress.status) : 'processing'),
+    [progress],
+  );
+
+  const normalizedStage = useMemo(
+    () => (progress ? resolveProgressStage(progress.status, progress.stage) : 'uploading'),
+    [progress],
+  );
+
+  if (queryError) {
+    const is404 = isNotFoundError(queryError);
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <AntResult
-          status="error"
-          title="加载失败"
-          subTitle="无法获取任务信息，请检查网络连接或稍后重试"
-          extra={[
-            <Button key="back" onClick={handleGoBack}>
-              返回首页
-            </Button>,
-            <Button key="retry" type="primary" onClick={() => refetch()}>
-              重试
-            </Button>,
-          ]}
-        />
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#fff8f1_0%,#fffdf8_18%,#f8fafc_44%,#eef2ff_100%)] px-4">
+        <Card className="w-full max-w-xl border border-white/40 bg-white/82 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.10)] backdrop-blur">
+          <EmptyState>
+            <div className="space-y-4 text-center">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
+                {is404 ? '任务不存在' : '加载失败'}
+              </h1>
+              <p className="text-sm leading-6 text-slate-500">
+                {is404
+                  ? '找不到指定的处理任务，可能已被删除或任务 ID 错误。'
+                  : '无法获取任务信息，请检查后端服务或稍后重试。'}
+              </p>
+              <div className="flex flex-col justify-center gap-3 sm:flex-row">
+                <Button variant="secondary" onClick={() => navigate('/')}>返回首页</Button>
+                {!is404 ? (
+                  <Button variant="primary" onClick={() => void refetch()}>重新加载</Button>
+                ) : null}
+              </div>
+            </div>
+          </EmptyState>
+        </Card>
       </div>
     );
   }
 
-  // 加载状态
   if (isLoading) {
-    return (
-      <LoadingState
-        type="page"
-        tip="加载任务信息中..."
-        size="large"
-      />
-    );
+    return <LoadingState type="page" tip="加载任务信息中..." size="large" />;
   }
 
-  // 进度信息不存在
-  if (!progress) {
+  if (!progress || !fileId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <AntResult
-          status="404"
-          title="任务不存在"
-          subTitle="找不到指定的处理任务，可能已被删除或ID错误"
-          extra={
-            <Button type="primary" onClick={handleGoBack}>
-              返回首页
-            </Button>
-          }
-        />
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#fff8f1_0%,#fffdf8_18%,#f8fafc_44%,#eef2ff_100%)] px-4">
+        <Card className="w-full max-w-xl border border-white/40 bg-white/82 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.10)] backdrop-blur">
+          <div className="space-y-4 text-center">
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">任务不存在</h1>
+            <p className="text-sm leading-6 text-slate-500">当前没有找到可展示的任务信息。</p>
+            <Button variant="primary" onClick={() => navigate('/')}>返回首页</Button>
+          </div>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-6 max-w-6xl">
-        {/* 全局错误提示 */}
-        {hasError && (
-          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4">
-            <ErrorAlert
-              title="操作失败"
-              message={error?.message || '发生未知错误'}
-              type="error"
-              showIcon
-              closable
-              onClose={clearError}
-            />
-          </div>
-        )}
+    <div className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#fff8f1_0%,#fffdf8_18%,#f8fafc_44%,#eef2ff_100%)]">
+      {hasError ? (
+        <div className="fixed left-1/2 top-4 z-50 w-full max-w-md -translate-x-1/2 px-4">
+          <ErrorAlert
+            title="操作失败"
+            message={error?.message || '发生未知错误'}
+            type="error"
+            showIcon
+            closable
+            onClose={clearError}
+          />
+        </div>
+      ) : null}
 
-        {/* 页面头部 */}
-        <div className="mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 space-y-4 sm:space-y-0">
-            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-              <Button
-                icon={<ArrowLeftOutlined />}
-                onClick={handleGoBack}
-                className="flex items-center w-fit"
-              >
-                返回首页
-              </Button>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
+      <div className="relative isolate">
+        <div className="absolute left-1/2 top-0 -z-10 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-orange-300/20 blur-3xl" />
+        <div className="absolute right-[-100px] top-[120px] -z-10 h-[320px] w-[320px] rounded-full bg-indigo-300/18 blur-3xl" />
+
+        <div className="mx-auto max-w-7xl px-4 pb-16 pt-8 sm:px-6 lg:px-8 lg:pt-12">
+          <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-4">
+              <Chip variant="soft" color={progress.status === 'completed' ? 'success' : progress.status === 'failed' ? 'danger' : 'warning'}>
+                {progress.status === 'completed' ? '处理完成' : progress.status === 'failed' ? '处理失败' : '处理中'}
+              </Chip>
+              <div className="space-y-3">
+                <h1 className="font-serif text-5xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-6xl">
                   处理进度
                 </h1>
-                <p className="text-sm sm:text-base text-gray-600">
-                  实时跟踪视频处理状态和进度 (WebSocket已连接)
+                <p className="max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
+                  当前页面展示本地处理任务的实时状态、阶段进度和结果产出情况。
                 </p>
               </div>
             </div>
-            
-            <Space wrap className="flex-wrap">
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleRefresh}
-                size="small"
-                className="sm:size-default"
-              >
-                <span className="hidden sm:inline">刷新</span>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button variant="secondary" onClick={() => navigate('/')}>
+                <span className="inline-flex items-center gap-2">
+                  <ArrowLeft size={16} />
+                  返回首页
+                </span>
               </Button>
-            </Space>
+              {progress.status === 'completed' ? (
+                <Button variant="primary" onClick={() => navigate(`/result/${fileId}`)}>
+                  <span className="inline-flex items-center gap-2">
+                    <Eye size={16} />
+                    查看结果
+                  </span>
+                </Button>
+              ) : null}
+              {progress.result?.highlightVideo ? (
+                <Button variant="secondary" onClick={() => void handleDownloadResult()}>
+                  <span className="inline-flex items-center gap-2">
+                    <Download size={16} />
+                    下载视频
+                  </span>
+                </Button>
+              ) : null}
+              <Button variant="ghost" onClick={() => void handleRefresh()}>
+                <span className="inline-flex items-center gap-2">
+                  <RefreshCcw size={16} />
+                  刷新
+                </span>
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <ProgressIndicator
+              status={normalizedStatus}
+              stage={normalizedStage}
+              progress={progress.progress}
+              message={progress.stage}
+              totalSteps={6}
+            />
+
+            <StatusDisplay
+              task={{
+                id: fileId,
+                status: normalizedStatus,
+                stage: progress.stage,
+                progress: progress.progress,
+                message: progress.stage || '',
+                result: progress.result,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                error_message: progress.error,
+              }}
+              onRetry={() => void handleRetry()}
+              onViewResult={progress.status === 'completed' ? () => navigate(`/result/${fileId}`) : undefined}
+              onDownloadResult={progress.result?.highlightVideo ? () => void handleDownloadResult() : undefined}
+              retryLoading={retryLoading}
+            />
           </div>
         </div>
-
-        {/* 进度指示器 + 日志 */}
-        <div className="mb-6">
-          <Card>
-            {
-              /* 将后端状态映射到前端阶段键 */
-            }
-            {(() => {
-              const status = progress.status as string;
-              const stageText = progress.stage || '';
-              let stageKey: any = 'uploading';
-              if (status === 'detecting') stageKey = stageText.includes('分析') ? 'analyzing' : 'detecting';
-              else if (status === 'generating') stageKey = 'generating';
-              else if (status === 'completed') stageKey = 'completed';
-              else if (status === 'failed') stageKey = 'finalizing';
-
-              return (
-                <ProgressIndicator
-                  status={(progress.status === 'completed' || progress.status === 'failed' || progress.status === 'pending') ? (progress.status as any) : 'processing'}
-                  stage={stageKey}
-                  progress={progress.progress}
-                  message={progress.stage}
-                  currentStep={undefined}
-                  totalSteps={undefined}
-                  estimatedTime={undefined}
-                />
-              );
-            })()}
-            
-          </Card>
-        </div>
-
-        {/* 状态详情 */}
-          <StatusDisplay
-          task={{
-            id: fileId!,
-            status: (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'pending') ? (progress.status as any) : 'processing',
-            stage: progress.stage,
-            progress: progress.progress,
-            message: progress.stage || '',
-            result: progress.result,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            error_message: (progress as any).error,
-          }}
-          onRetry={handleRetry}
-          onViewResult={() => {
-            const filename = (progress as any)?.result?.highlightVideo;
-            if (!filename) return;
-            const url = ApiService.getDownloadUrl(filename);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `basketball_highlight_${filename}`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-          }}
-          retryLoading={retryLoading}
-        />
       </div>
     </div>
   );
 };
+
+export default Progress;

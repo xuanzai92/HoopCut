@@ -5,14 +5,16 @@ import cv2
 import cvzone
 import math
 import numpy as np
+import os
 from utils import score, detect_down, detect_up, in_hoop_region, clean_hoop_pos, clean_ball_pos, get_device
 
 
 class ShotDetector:
     def __init__(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         # Load the YOLO model created from main.py - change text to your relative path
         self.overlay_text = "Waiting..."
-        self.model = YOLO("D:/basketball-highlight-generator/backend/best.pt")
+        self.model = YOLO(os.path.join(base_dir, "best.pt"))
         
         # Uncomment this line to accelerate inference. Note that this may cause errors in some setups.
         #self.model.half()
@@ -23,7 +25,7 @@ class ShotDetector:
         # self.cap = cv2.VideoCapture(0)
 
         # Use video - replace text with your video path
-        self.cap = cv2.VideoCapture("D:/basketball-highlight-generator/backend/test_fils/video_test_2.mp4")
+        self.cap = cv2.VideoCapture(os.path.join(base_dir, "test_files", "video_test_2.mp4"))
 
         self.ball_pos = []  # array of tuples ((x_pos, y_pos), frame count, width, height, conf)
         self.hoop_pos = []  # array of tuples ((x_pos, y_pos), frame count, width, height, conf)
@@ -168,4 +170,3 @@ class ShotDetector:
 
 if __name__ == "__main__":
     ShotDetector()
-

@@ -1,0 +1,121 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: H
+          - generic [ref=e12]:
+            - paragraph [ref=e13]: HoopCut
+            - paragraph [ref=e14]: Basketball highlight generator
+        - generic [ref=e16]: 本地视频处理
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - generic [ref=e21]: AI 进球检测
+            - generic [ref=e23]: 人物追踪初始化
+            - generic [ref=e25]: 自动导出个人高光
+          - generic [ref=e26]:
+            - heading "把一整场比赛 压成你自己的高光片。" [level=1] [ref=e27]:
+              - text: 把一整场比赛
+              - text: 压成你自己的高光片。
+            - paragraph [ref=e28]: 上传比赛视频，定位你第一次清晰出镜的时间点，框选自己，HoopCut 会从那一帧开始做人像追踪、识别你的进球和助攻，并导出可直接分享的个人集锦。
+          - generic [ref=e29]:
+            - button "立即上传视频" [ref=e30] [cursor=pointer]:
+              - generic [ref=e31]:
+                - text: 立即上传视频
+                - img
+            - generic [ref=e32]: 当前版本聚焦于个人集锦，不做全队战术分析。
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: Workflow
+            - img [ref=e37]
+          - generic [ref=e40]:
+            - generic [ref=e41]:
+              - generic [ref=e42]: "01"
+              - generic [ref=e43]: 上传原始比赛视频
+              - generic [ref=e44]: 支持大文件，本地分块上传
+            - generic [ref=e45]:
+              - generic [ref=e46]: "02"
+              - generic [ref=e47]: 截取出镜起点并框选
+              - generic [ref=e48]: 锁定你自己的追踪目标
+            - generic [ref=e49]:
+              - generic [ref=e50]: "03"
+              - generic [ref=e51]: 生成可分享集锦
+              - generic [ref=e52]: 输出只属于你的高光片
+      - generic [ref=e53]:
+        - generic [ref=e55]:
+          - img [ref=e57]
+          - generic [ref=e64]: 先锁定你
+          - paragraph [ref=e65]: 不是泛泛识别比赛，而是先把目标球员定准。
+        - generic [ref=e67]:
+          - img [ref=e69]
+          - generic [ref=e73]: 只剪你的有效镜头
+          - paragraph [ref=e74]: 围绕你本人相关进球和助攻做高光抽取。
+        - generic [ref=e76]:
+          - img [ref=e78]
+          - generic [ref=e81]: 少步骤直出成片
+          - paragraph [ref=e82]: 上传、框选、开始处理，避免冗余设置。
+    - generic [ref=e84]:
+      - button "上传篮球视频 拖拽文件到这里，或点击选择本地比赛视频。上传后你可以先定位第一次清晰出镜的画面，再框选自己。 自动检测投篮 个人高光剪辑 多格式兼容 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV，文件大小 1MB - 2GB" [ref=e88]:
+        - img [ref=e91]
+        - generic [ref=e94]:
+          - heading "上传篮球视频" [level=3] [ref=e95]
+          - paragraph [ref=e96]: 拖拽文件到这里，或点击选择本地比赛视频。上传后你可以先定位第一次清晰出镜的画面，再框选自己。
+        - generic [ref=e97]:
+          - generic [ref=e99]: 自动检测投篮
+          - generic [ref=e101]: 个人高光剪辑
+          - generic [ref=e103]: 多格式兼容
+        - generic [ref=e104]: 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV，文件大小 1MB - 2GB
+      - generic [ref=e105]:
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e109]:
+                - img [ref=e110]
+                - generic [ref=e113]: 剪辑参数
+              - paragraph [ref=e114]: 控制每个进球片段前后的保留时间，决定最后成片的节奏感。
+            - button "重置默认" [ref=e115] [cursor=pointer]:
+              - generic [ref=e116]:
+                - img
+                - text: 重置默认
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - generic [ref=e119]:
+                - generic [ref=e120]:
+                  - paragraph [ref=e121]: 进球前保留时间
+                  - paragraph [ref=e122]: 保留进攻发起、跑位和出手前的关键片段。
+                - generic [ref=e123]: 3.0s
+              - slider [ref=e124]: "3"
+              - generic [ref=e125]:
+                - generic [ref=e126]: 1s
+                - generic [ref=e127]: 15s
+            - generic [ref=e128]:
+              - generic [ref=e129]:
+                - generic [ref=e130]:
+                  - paragraph [ref=e131]: 进球后保留时间
+                  - paragraph [ref=e132]: 保留庆祝、回防和镜头收尾，避免成片太硬切。
+                - generic [ref=e133]: 1.0s
+              - slider [ref=e134]: "1"
+              - generic [ref=e135]:
+                - generic [ref=e136]: 1s
+                - generic [ref=e137]: 10s
+            - generic [ref=e138]: 默认配置适合大多数半场和全场比赛素材。如果原视频节奏更快，建议适当缩短前置时间。
+        - generic [ref=e140]:
+          - generic [ref=e141]:
+            - paragraph [ref=e142]: Ready Check
+            - heading "开始生成个人集锦" [level=2] [ref=e143]
+            - paragraph [ref=e144]: 当前版本会从你选中的出镜画面开始做目标跟踪，并导出归因到你的进球和助攻镜头。
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - generic [ref=e147]: 视频已上传
+              - generic [ref=e148]: 未选择
+            - generic [ref=e149]:
+              - generic [ref=e150]: 目标球员已框选
+              - generic [ref=e151]: 待操作
+            - generic [ref=e152]:
+              - generic [ref=e153]: 处理参数已设置
+              - generic [ref=e154]: 3.0s / 1.0s
+          - button "开始生成个人集锦" [disabled]:
+            - generic:
+              - text: 开始生成个人集锦
+              - img

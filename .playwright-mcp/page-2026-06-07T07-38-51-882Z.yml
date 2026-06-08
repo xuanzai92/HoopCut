@@ -1,0 +1,5 @@
+- main [ref=e4]:
+  - generic [ref=e6]:
+    - img "loading" [ref=e8]:
+      - img [ref=e9]
+    - generic [ref=e11]: 加载任务信息中...

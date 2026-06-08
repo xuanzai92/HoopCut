@@ -9,30 +9,32 @@ export const sleep = (ms: number): Promise<void> => {
 };
 
 // 防抖函数
-export const debounce = <T extends (...args: any[]) => any>(
-  func: T,
+export const debounce = <TArgs extends unknown[]>(
+  func: (...args: TArgs) => void,
   wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: number;
+): ((...args: TArgs) => void) => {
+  let timeout: ReturnType<typeof setTimeout>;
   
-  return (...args: Parameters<T>) => {
+  return (...args: TArgs) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
   };
 };
 
 // 节流函数
-export const throttle = <T extends (...args: any[]) => any>(
-  func: T,
+export const throttle = <TArgs extends unknown[]>(
+  func: (...args: TArgs) => void,
   limit: number
-): ((...args: Parameters<T>) => void) => {
-  let inThrottle: boolean;
+): ((...args: TArgs) => void) => {
+  let inThrottle = false;
   
-  return (...args: Parameters<T>) => {
+  return (...args: TArgs) => {
     if (!inThrottle) {
       func(...args);
       inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
+      setTimeout(() => {
+        inThrottle = false;
+      }, limit);
     }
   };
 };
@@ -42,25 +44,25 @@ export const generateId = (): string => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
+type PlainObject = Record<string, unknown>;
+
 // 深拷贝
 export const deepClone = <T>(obj: T): T => {
   if (obj === null || typeof obj !== 'object') return obj;
-  if (obj instanceof Date) return new Date(obj.getTime()) as any;
-  if (obj instanceof Array) return obj.map(item => deepClone(item)) as any;
+  if (obj instanceof Date) return new Date(obj.getTime()) as T;
+  if (Array.isArray(obj)) return obj.map((item) => deepClone(item)) as T;
   if (typeof obj === 'object') {
-    const clonedObj = {} as any;
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        clonedObj[key] = deepClone(obj[key]);
-      }
+    const clonedObj: PlainObject = {};
+    for (const [key, value] of Object.entries(obj as PlainObject)) {
+      clonedObj[key] = deepClone(value);
     }
-    return clonedObj;
+    return clonedObj as T;
   }
   return obj;
 };
 
 // 对象合并
-export const mergeObjects = <T extends Record<string, any>>(
+export const mergeObjects = <T extends Record<string, unknown>>(
   target: T,
   ...sources: Partial<T>[]
 ): T => {
@@ -85,38 +87,47 @@ export const uniqueArray = <T>(array: T[], key?: keyof T): T[] => {
 };
 
 // 获取嵌套对象属性
-export const getNestedValue = (obj: any, path: string, defaultValue?: any): any => {
+export const getNestedValue = (
+  obj: unknown,
+  path: string,
+  defaultValue?: unknown
+): unknown => {
   const keys = path.split('.');
-  let result = obj;
+  let result: unknown = obj;
   
   for (const key of keys) {
-    if (result === null || result === undefined || !(key in result)) {
+    if (
+      result === null ||
+      result === undefined ||
+      typeof result !== 'object' ||
+      !(key in result)
+    ) {
       return defaultValue;
     }
-    result = result[key];
+    result = (result as PlainObject)[key];
   }
   
   return result;
 };
 
 // 设置嵌套对象属性
-export const setNestedValue = (obj: any, path: string, value: any): void => {
+export const setNestedValue = (obj: PlainObject, path: string, value: unknown): void => {
   const keys = path.split('.');
   const lastKey = keys.pop()!;
-  let current = obj;
+  let current: PlainObject = obj;
   
   for (const key of keys) {
-    if (!(key in current) || typeof current[key] !== 'object') {
+    if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
       current[key] = {};
     }
-    current = current[key];
+    current = current[key] as PlainObject;
   }
   
   current[lastKey] = value;
 };
 
 // 检查是否为空值
-export const isEmpty = (value: any): boolean => {
+export const isEmpty = (value: unknown): boolean => {
   if (value === null || value === undefined) return true;
   if (typeof value === 'string') return value.trim() === '';
   if (Array.isArray(value)) return value.length === 0;

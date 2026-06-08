@@ -1,0 +1,136 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - generic [ref=e342]:
+      - generic [ref=e344]:
+        - generic [ref=e345]:
+          - button "arrow-left 返回首页" [ref=e346] [cursor=pointer]:
+            - img "arrow-left" [ref=e348]:
+              - img [ref=e349]
+            - generic [ref=e351]: 返回首页
+          - generic [ref=e352]:
+            - heading "个人高光结果" [level=1] [ref=e353]
+            - paragraph [ref=e354]: 当前展示的是归因到你自己的进球剪辑结果
+        - generic [ref=e355]:
+          - button "reload" [ref=e357] [cursor=pointer]:
+            - img "reload" [ref=e359]:
+              - img [ref=e360]
+          - button "share-alt" [ref=e363] [cursor=pointer]:
+            - img "share-alt" [ref=e365]:
+              - img [ref=e366]
+          - button "download" [ref=e369] [cursor=pointer]:
+            - img "download" [ref=e371]:
+              - img [ref=e372]
+      - generic [ref=e374]:
+        - generic [ref=e376]:
+          - generic [ref=e379]: 个人高光视频
+          - generic [ref=e382]:
+            - heading "个人高光视频" [level=3] [ref=e384]
+            - generic [ref=e385]:
+              - button "play-circle" [ref=e388] [cursor=pointer]:
+                - img "play-circle" [ref=e390]:
+                  - img [ref=e391]
+              - generic [ref=e394]:
+                - slider [ref=e398] [cursor=pointer]
+                - generic [ref=e399]:
+                  - generic [ref=e400]:
+                    - button "play-circle" [ref=e401] [cursor=pointer]:
+                      - img "play-circle" [ref=e403]:
+                        - img [ref=e404]
+                    - generic [ref=e407]:
+                      - button "sound" [ref=e408] [cursor=pointer]:
+                        - img "sound" [ref=e410]:
+                          - img [ref=e411]
+                      - slider [ref=e414] [cursor=pointer]
+                    - generic [ref=e415]: 00:00 / 00:04
+                  - generic [ref=e416]:
+                    - button "download" [ref=e417] [cursor=pointer]:
+                      - img "download" [ref=e419]:
+                        - img [ref=e420]
+                    - button "share-alt" [ref=e422] [cursor=pointer]:
+                      - img "share-alt" [ref=e424]:
+                        - img [ref=e425]
+                    - button "expand" [ref=e427] [cursor=pointer]:
+                      - img "expand" [ref=e429]:
+                        - img [ref=e430]
+                    - button "fullscreen" [ref=e432] [cursor=pointer]:
+                      - img "fullscreen" [ref=e434]:
+                        - img [ref=e435]
+        - generic [ref=e439]:
+          - generic [ref=e441]:
+            - generic [ref=e444]: 个人结果概览
+            - generic [ref=e445]:
+              - generic [ref=e446]:
+                - generic [ref=e448]:
+                  - generic [ref=e449]: 总投篮
+                  - generic [ref=e450]:
+                    - img "aim" [ref=e452]:
+                      - img [ref=e453]
+                    - generic [ref=e456]: "1"
+                - generic [ref=e458]:
+                  - generic [ref=e459]: 全场进球
+                  - generic [ref=e460]:
+                    - img "check-circle" [ref=e462]:
+                      - img [ref=e463]
+                    - generic [ref=e466]: "1"
+                - generic [ref=e468]:
+                  - generic [ref=e469]: 你的进球
+                  - generic [ref=e470]:
+                    - img "user" [ref=e472]:
+                      - img [ref=e473]
+                    - generic [ref=e475]: "1"
+                - generic [ref=e477]:
+                  - generic [ref=e478]: 命中率
+                  - generic [ref=e479]:
+                    - img "trophy" [ref=e481]:
+                      - img [ref=e482]
+                    - generic [ref=e484]: "100.0"
+                    - generic [ref=e485]: "%"
+              - generic [ref=e487]:
+                - generic [ref=e488]:
+                  - generic [ref=e489]: 人物跟踪覆盖率
+                  - generic [ref=e490]: 100.0%
+                - progressbar [ref=e491]
+          - generic [ref=e496]:
+            - generic [ref=e499]: 输出信息
+            - generic [ref=e501]:
+              - generic [ref=e502]:
+                - generic [ref=e503]: 是否生成集锦
+                - generic [ref=e504]: 已生成
+              - generic [ref=e505]:
+                - generic [ref=e506]: 输出文件大小
+                - generic [ref=e507]: 551.75 KB
+              - generic [ref=e508]:
+                - generic [ref=e509]: 标注视频
+                - generic [ref=e510]: 已生成
+              - generic [ref=e511]:
+                - generic [ref=e512]: 初始选区
+                - generic [ref=e513]: 67 x 176
+          - generic [ref=e515]:
+            - generic [ref=e518]: 你的进球时刻 (1)
+            - list [ref=e520]:
+              - listitem [ref=e521]:
+                - generic [ref=e524]:
+                  - generic [ref=e525]:
+                    - generic [ref=e526]: 你的进球
+                    - generic [ref=e527]: 7.59s
+                  - generic [ref=e528]: "帧: 228"
+      - generic [ref=e532]:
+        - tablist [ref=e533]:
+          - generic [ref=e535]:
+            - tab "你的进球 (1)" [selected] [ref=e537] [cursor=pointer]
+            - tab "全场进球 (1)" [ref=e539] [cursor=pointer]
+            - tab "任务信息" [ref=e541] [cursor=pointer]
+        - tabpanel "你的进球 (1)" [ref=e544]:
+          - generic [ref=e548]:
+            - generic [ref=e549]:
+              - generic [ref=e550]: 镜头 1
+              - generic [ref=e551]: 7.59s · 帧 228
+            - generic [ref=e552]:
+              - generic [ref=e554]: 你的进球
+              - generic [ref=e556]: 目标可见
+      - button "继续处理新视频" [ref=e558] [cursor=pointer]:
+        - generic [ref=e559]: 继续处理新视频
+  - generic [ref=e12]:
+    - img [ref=e14]
+    - button "Open Tanstack query devtools" [ref=e62] [cursor=pointer]:
+      - img [ref=e63]

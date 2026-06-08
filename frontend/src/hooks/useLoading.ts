@@ -7,17 +7,17 @@ import { useState, useCallback } from 'react';
 interface UseLoadingReturn {
   loading: boolean;
   setLoading: (loading: boolean) => void;
-  withLoading: <T extends any[], R>(
-    fn: (...args: T) => Promise<R>
-  ) => (...args: T) => Promise<R>;
+  withLoading: <TArgs extends unknown[], R>(
+    fn: (...args: TArgs) => Promise<R>
+  ) => (...args: TArgs) => Promise<R>;
 }
 
 export const useLoading = (initialLoading = false): UseLoadingReturn => {
   const [loading, setLoading] = useState(initialLoading);
 
   const withLoading = useCallback(
-    <T extends any[], R>(fn: (...args: T) => Promise<R>) => {
-      return async (...args: T): Promise<R> => {
+    <TArgs extends unknown[], R>(fn: (...args: TArgs) => Promise<R>) => {
+      return async (...args: TArgs): Promise<R> => {
         setLoading(true);
         try {
           const result = await fn(...args);

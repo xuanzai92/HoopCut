@@ -1,267 +1,158 @@
-/**
- * 结果统计组件
- */
 import React from 'react';
-import { Card, Row, Col, Statistic, Progress, Tag, Timeline, Divider } from 'antd';
-import {
-  TrophyOutlined,
-  AimOutlined,
-  ClockCircleOutlined,
-  PlayCircleOutlined,
-  CheckCircleOutlined,
-  FireOutlined,
-  ThunderboltOutlined,
-  EyeOutlined,
-} from '@ant-design/icons';
-import type { DetectionStats, ProcessingResult } from '@/types';
-import { formatDuration, formatFileSize } from '@/utils';
+import { Card, Chip, ProgressBar } from '@heroui/react';
+import { Crosshair, Goal, Medal, Radar, Sparkles, TimerReset } from 'lucide-react';
+import type { ProcessingResult, ShotTimestamp } from '@/types';
+import { formatDuration, formatFileSize, formatTimestamp } from '@/utils';
 
 interface ResultStatsProps {
   result: ProcessingResult;
   className?: string;
 }
 
-export const ResultStats: React.FC<ResultStatsProps> = ({
-  result,
-  className = '',
-}) => {
-  const { stats, highlights, processing_time, output_file } = result;
-  const backend: any = result || {};
-  const totalShots = (stats && stats.total_shots) ?? backend.totalShots ?? 0;
-  const madeShots = (stats && stats.successful_shots) ?? backend.madeShots ?? 0;
-  const accuracy = (stats && stats.accuracy_rate) ?? backend.accuracy ?? 0;
-  const highlightDuration = (stats && stats.highlight_duration) ?? 0;
+const getHighlightMeta = (timestamp: ShotTimestamp) => {
+  if (timestamp.highlight_role === 'assist') {
+    return { color: 'warning' as const, label: '你的助攻' };
+  }
 
-  // 计算命中率颜色
-  const getAccuracyColor = (rate: number) => {
-    if (rate >= 80) return '#52c41a';
-    if (rate >= 60) return '#faad14';
-    return '#ff4d4f';
-  };
+  if (timestamp.highlight_role === 'score' || timestamp.owner === 'target') {
+    return { color: 'success' as const, label: '你的进球' };
+  }
 
-  // 生成高光时间线
-  const getHighlightTimeline = () => {
-    if (!highlights || highlights.length === 0) {
-      return [];
-    }
+  return { color: 'default' as const, label: '全场进球' };
+};
 
-    return highlights.slice(0, 5).map((highlight, index) => ({
-      color: highlight.type === 'shot' ? 'orange' : 
-             highlight.type === 'dunk' ? 'red' : 
-             highlight.type === 'pass' ? 'blue' : 'green',
-      children: (
-        <div>
-          <div className="flex items-center space-x-2 mb-1">
-            <Tag color={
-              highlight.type === 'shot' ? 'orange' : 
-              highlight.type === 'dunk' ? 'red' : 
-              highlight.type === 'pass' ? 'blue' : 'green'
-            }>
-              {highlight.type === 'shot' ? '投篮' :
-               highlight.type === 'dunk' ? '扣篮' :
-               highlight.type === 'pass' ? '传球' : '防守'}
-            </Tag>
-            <span className="font-medium">
-              {formatDuration(highlight.start_time)} - {formatDuration(highlight.end_time)}
-            </span>
+export const ResultStats: React.FC<ResultStatsProps> = ({ result, className = '' }) => {
+  const totalShots = result.totalShots ?? 0;
+  const madeShots = result.madeShots ?? 0;
+  const targetTimestamps = result.timestamps ?? [];
+  const targetScores =
+    result.targetScores ??
+    result.targetShots ??
+    targetTimestamps.filter((timestamp) => timestamp.highlight_role === 'score' || timestamp.owner === 'target').length;
+  const targetAssists =
+    result.targetAssists ??
+    targetTimestamps.filter((timestamp) => timestamp.highlight_role === 'assist').length;
+  const targetHighlights = result.targetHighlights ?? targetTimestamps.length;
+  const accuracy = result.accuracy ?? 0;
+  const trackingCoverage = (result.tracking?.coverage ?? 0) * 100;
+  const outputFileSize = result.fileSize ?? result.file_size ?? 0;
+
+  const metrics = [
+    { label: '总投篮', value: totalShots, icon: Crosshair },
+    { label: '全场进球', value: madeShots, icon: Goal },
+    { label: '你的高光', value: targetHighlights, icon: Sparkles },
+    { label: '你的进球', value: targetScores, icon: Medal },
+    { label: '你的助攻', value: targetAssists, icon: Radar },
+    { label: '命中率', value: `${accuracy.toFixed(1)}%`, icon: TimerReset },
+  ];
+
+  return (
+    <div className={`space-y-6 ${className}`}>
+      <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="space-y-5">
+          <div>
+            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Overview</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">个人结果概览</h3>
           </div>
-          <div className="text-sm text-gray-600">
-            置信度: {(highlight.confidence * 100).toFixed(1)}%
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {metrics.map(({ label, value, icon: Icon }) => (
+              <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-slate-500">{label}</div>
+                  <Icon size={16} className="text-orange-500" />
+                </div>
+                <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</div>
+              </div>
+            ))}
           </div>
-          {highlight.description && (
-            <div className="text-sm text-gray-500 mt-1">
-              {highlight.description}
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+            <div className="mb-2 flex items-center justify-between text-sm text-slate-500">
+              <span>人物跟踪覆盖率</span>
+              <span className="font-semibold text-slate-900">{trackingCoverage.toFixed(1)}%</span>
+            </div>
+            <ProgressBar value={trackingCoverage} color={result.tracking?.enabled ? 'success' : 'default'} />
+          </div>
+
+          {result.message ? (
+            <div className="rounded-2xl border border-orange-100 bg-orange-50/70 px-4 py-3 text-sm text-slate-600">
+              {result.message}
+            </div>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="space-y-4">
+          <div>
+            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Output</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">输出信息</h3>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="text-sm text-slate-600">是否生成集锦：<span className="font-medium text-slate-900">{result.highlightVideo ? '已生成' : '未生成'}</span></div>
+            <div className="text-sm text-slate-600">标注视频：<span className="font-medium text-slate-900">{result.annotatedVideo ? '已生成' : '未生成'}</span></div>
+            {outputFileSize > 0 ? <div className="text-sm text-slate-600">输出文件大小：<span className="font-medium text-slate-900">{formatFileSize(outputFileSize)}</span></div> : null}
+            {result.completed_at ? <div className="text-sm text-slate-600">完成时间：<span className="font-medium text-slate-900">{formatTimestamp(result.completed_at)}</span></div> : null}
+            {result.targetPlayerBox ? <div className="text-sm text-slate-600">初始选区：<span className="font-medium text-slate-900">{result.targetPlayerBox.width} x {result.targetPlayerBox.height}</span></div> : null}
+            {typeof result.targetPlayerBox?.selectionTime === 'number' ? (
+              <div className="text-sm text-slate-600">
+                跟踪起点：
+                <span className="font-medium text-slate-900">
+                  {formatDuration(result.targetPlayerBox.selectionTime)} ({result.targetPlayerBox.selectionTime.toFixed(2)}s)
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="space-y-4">
+          <div>
+            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Moments</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">你的高光时刻</h3>
+          </div>
+
+          {targetTimestamps.length > 0 ? (
+            <div className="space-y-3">
+              {targetTimestamps.slice(0, 5).map((timestamp, index) => {
+                const meta = getHighlightMeta(timestamp);
+                return (
+                  <div key={`${timestamp.frame}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="font-medium text-slate-900">镜头 {index + 1}</div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          {timestamp.timestamp.toFixed(2)}s · 帧 {timestamp.frame}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Chip color={meta.color} variant="soft">{meta.label}</Chip>
+                        {typeof timestamp.highlight_confidence === 'number' && timestamp.highlight_confidence > 0 ? (
+                          <Chip color="accent" variant="soft">
+                            高光置信度 {(timestamp.highlight_confidence * 100).toFixed(0)}%
+                          </Chip>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {targetTimestamps.length > 5 ? (
+                <div className="text-sm text-slate-500">还有 {targetTimestamps.length - 5} 个个人高光时刻</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
+              当前没有归因到你的高光时刻
             </div>
           )}
         </div>
-      ),
-    }));
-  };
-
-  return (
-    <div className={`result-stats ${className}`}>
-      <Row gutter={[16, 16]}>
-        {/* 核心统计数据 */}
-        <Col xs={24} lg={16}>
-          <Card title="检测统计" className="h-full">
-            <Row gutter={16}>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="总投篮次数"
-                  value={totalShots}
-                  prefix={<AimOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="成功投篮"
-                  value={madeShots}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="命中率"
-                  value={accuracy}
-                  precision={1}
-                  suffix="%"
-                  prefix={<TrophyOutlined />}
-                  valueStyle={{ color: getAccuracyColor(accuracy) }}
-                />
-              </Col>
-              <Col xs={12} sm={6}>
-                <Statistic
-                  title="高光时长"
-                  value={highlightDuration}
-                  precision={1}
-                  suffix="秒"
-                  prefix={<PlayCircleOutlined />}
-                  valueStyle={{ color: '#722ed1' }}
-                />
-              </Col>
-            </Row>
-
-            <Divider />
-
-            {/* 详细统计 */}
-            <Row gutter={16}>
-              <Col xs={24} sm={12}>
-                <div className="mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-gray-600">投篮命中率</span>
-                    <span className="font-semibold">{accuracy.toFixed(1)}%</span>
-                  </div>
-                  <Progress
-                    percent={accuracy}
-                    strokeColor={getAccuracyColor(accuracy)}
-                    showInfo={false}
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12}>
-                <div className="mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-gray-600">高光占比</span>
-                    <span className="font-semibold">
-                      {((highlightDuration / (output_file?.duration || 1)) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <Progress
-                  percent={(highlightDuration / (output_file?.duration || 1)) * 100}
-                  strokeColor="#722ed1"
-                  showInfo={false}
-                />
-                </div>
-              </Col>
-            </Row>
-
-            
-          </Card>
-        </Col>
-
-        {/* 处理信息 */}
-        <Col xs={24} lg={8}>
-          <Card title="处理信息" className="h-full">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">处理时长:</span>
-                <span className="font-semibold">
-                  <ClockCircleOutlined className="mr-1" />
-                  {formatDuration(processing_time)}
-                </span>
-              </div>
-              
-              {output_file && (
-                <>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">输出文件:</span>
-                    <span className="font-semibold">{output_file.name}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">文件大小:</span>
-                    <span className="font-semibold">{formatFileSize(output_file.size)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">视频时长:</span>
-                    <span className="font-semibold">{formatDuration(output_file.duration)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">分辨率:</span>
-                    <span className="font-semibold">{output_file.resolution}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">帧率:</span>
-                    <span className="font-semibold">{output_file.fps} FPS</span>
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">完成时间:</span>
-                <span className="font-semibold">
-                  {new Date(result.completed_at).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </Card>
-        </Col>
-
-        {/* 高光时间线 */}
-        {(result as any).timestamps && (result as any).timestamps.length > 0 && (
-          <Col xs={24}>
-            <Card title={`进球时刻 (${(result as any).timestamps.length}个)`}>
-              <Timeline items={(result as any).timestamps.slice(0,5).map((t:any) => ({ color: 'orange', children: (
-                <div>
-                  <div className="flex items-center space-x-2 mb-1">
-                    <Tag color="orange">进球</Tag>
-                    <span className="font-medium">{t.timestamp.toFixed(2)}s</span>
-                  </div>
-                  <div className="text-sm text-gray-600">帧: {t.frame}</div>
-                </div>
-              )}))} />
-              {(result as any).timestamps.length > 5 && (
-                <div className="text-center text-gray-500 mt-4">
-                  还有 {(result as any).timestamps.length - 5} 个时刻...
-                </div>
-              )}
-            </Card>
-          </Col>
-        )}
-
-        {/* 性能指标 */}
-        <Col xs={24}>
-          <Card title="性能指标">
-            <Row gutter={16}>
-              <Col xs={24} sm={8}>
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600 mb-1">
-                    {(totalShots / Math.max(processing_time / 60 || 1, 1)).toFixed(1)}
-                  </div>
-                  <div className="text-sm text-gray-600">检测速度 (次/分钟)</div>
-                </div>
-              </Col>
-              <Col xs={24} sm={8}>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600 mb-1">
-                    {((highlightDuration / (output_file?.duration || 1)) * 100).toFixed(1)}%
-                  </div>
-                  <div className="text-sm text-gray-600">精彩度</div>
-                </div>
-              </Col>
-              <Col xs={24} sm={8}>
-                <div className="text-center p-4 bg-purple-50 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-600 mb-1">
-                    {accuracy.toFixed(1)}%
-                  </div>
-                  <div className="text-sm text-gray-600">平均置信度</div>
-                </div>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-      </Row>
+      </Card>
     </div>
   );
 };
+
+export default ResultStats;

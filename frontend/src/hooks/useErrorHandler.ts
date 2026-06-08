@@ -3,7 +3,7 @@
  * 统一处理应用中的错误
  */
 import { useState, useCallback } from 'react';
-import { message } from 'antd';
+import { Toast } from '@heroui/react';
 
 interface ErrorState {
   error: Error | null;
@@ -13,13 +13,13 @@ interface ErrorState {
 interface UseErrorHandlerReturn extends ErrorState {
   handleError: (error: Error | string) => void;
   clearError: () => void;
-  withErrorHandling: <T extends any[], R>(
-    fn: (...args: T) => Promise<R>,
+  withErrorHandling: <TArgs extends unknown[], R>(
+    fn: (...args: TArgs) => Promise<R>,
     options?: {
       showMessage?: boolean;
       customMessage?: string;
     }
-  ) => (...args: T) => Promise<R | undefined>;
+  ) => (...args: TArgs) => Promise<R | undefined>;
 }
 
 export const useErrorHandler = (): UseErrorHandlerReturn => {
@@ -51,14 +51,14 @@ export const useErrorHandler = (): UseErrorHandlerReturn => {
   }, []);
 
   const withErrorHandling = useCallback(
-    <T extends any[], R>(
-      fn: (...args: T) => Promise<R>,
+    <TArgs extends unknown[], R>(
+      fn: (...args: TArgs) => Promise<R>,
       options: {
         showMessage?: boolean;
         customMessage?: string;
       } = {}
     ) => {
-      return async (...args: T): Promise<R | undefined> => {
+      return async (...args: TArgs): Promise<R | undefined> => {
         try {
           clearError();
           const result = await fn(...args);
@@ -69,7 +69,7 @@ export const useErrorHandler = (): UseErrorHandlerReturn => {
 
           if (options.showMessage !== false) {
             const errorMessage = options.customMessage || errorObj.message || '操作失败';
-            message.error(errorMessage);
+            Toast.toast.danger(errorMessage);
           }
 
           return undefined;

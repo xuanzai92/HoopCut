@@ -1,0 +1,10 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - generic [ref=e6]:
+      - img "loading" [ref=e8]:
+        - img [ref=e9]
+      - generic [ref=e11]: 加载结果中...
+  - generic [ref=e12]:
+    - img [ref=e14]
+    - button "Open Tanstack query devtools" [ref=e62] [cursor=pointer]:
+      - img [ref=e63]

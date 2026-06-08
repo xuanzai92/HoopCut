@@ -1,295 +1,173 @@
-/**
- * 状态展示组件
- */
 import React from 'react';
-import { Card, Row, Col, Statistic, Tag, Timeline, Alert, Space, Button } from 'antd';
-import { 
-  ClockCircleOutlined, 
-  FileOutlined, 
-  PlayCircleOutlined,
-  CheckCircleOutlined,
-  ExclamationCircleOutlined,
-  ReloadOutlined,
-  EyeOutlined
-} from '@ant-design/icons';
-import type { Task, TaskStatus } from '@/types';
-import { formatFileSize, formatDuration, formatTimestamp } from '@/utils';
+import { Alert, Button, Card, Chip } from '@heroui/react';
+import { CheckCircle2, Clock3, Download, Eye, FileVideo, RefreshCcw, UserRound } from 'lucide-react';
+import type { Task } from '@/types';
+import { formatDuration, formatFileSize, formatTimestamp } from '@/utils';
 
 interface StatusDisplayProps {
   task: Task;
   onRetry?: () => void;
   onViewResult?: () => void;
+  onDownloadResult?: () => void;
   retryLoading?: boolean;
   className?: string;
 }
+
+const getStatusChip = (status: Task['status']) => {
+  if (status === 'completed') return <Chip color="success" variant="soft">已完成</Chip>;
+  if (status === 'failed') return <Chip color="danger" variant="soft">失败</Chip>;
+  if (status === 'pending') return <Chip color="default" variant="soft">等待中</Chip>;
+  return <Chip color="warning" variant="soft">处理中</Chip>;
+};
 
 export const StatusDisplay: React.FC<StatusDisplayProps> = ({
   task,
   onRetry,
   onViewResult,
+  onDownloadResult,
   retryLoading = false,
   className = '',
 }) => {
-  // 获取状态标签
-  const getStatusTag = (status: TaskStatus | string) => {
-    const statusConfig = {
-      pending: { color: 'blue', text: '等待中' },
-      processing: { color: 'orange', text: '处理中' },
-      completed: { color: 'green', text: '已完成' },
-      failed: { color: 'red', text: '失败' },
-    };
-
-    const key = (status === 'completed' || status === 'failed' || status === 'pending')
-      ? status
-      : 'processing';
-    const config = (statusConfig as any)[key];
-    return <Tag color={config.color}>{config.text}</Tag>;
-  };
-
-  // 生成时间线数据
-  const getTimelineItems = () => {
-    const items = [
-      {
-        color: 'blue',
-        dot: <ClockCircleOutlined />,
-        children: (
-          <div>
-            <div className="font-medium">任务创建</div>
-            <div className="text-sm text-gray-500">
-              {formatTimestamp(task.created_at)}
-            </div>
-          </div>
-        ),
-      },
-    ];
-
-    if (task.status === 'processing') {
-      items.push({
-        color: 'orange',
-        dot: <PlayCircleOutlined />,
-        children: (
-          <div>
-            <div className="font-medium">开始处理</div>
-            <div className="text-sm text-gray-500">
-              当前阶段：{task.stage}
-            </div>
-          </div>
-        ),
-      });
-    }
-
-    if (task.status === 'completed') {
-      items.push(
-        {
-          color: 'orange',
-          dot: <PlayCircleOutlined />,
-          children: (
-            <div>
-              <div className="font-medium">开始处理</div>
-              <div className="text-sm text-gray-500">
-                {formatTimestamp(task.updated_at)}
-              </div>
-            </div>
-          ),
-        },
-        {
-          color: 'green',
-          dot: <CheckCircleOutlined />,
-          children: (
-            <div>
-              <div className="font-medium">处理完成</div>
-              <div className="text-sm text-gray-500">
-                {task.result?.completed_at && formatTimestamp(task.result.completed_at)}
-              </div>
-            </div>
-          ),
-        }
-      );
-    }
-
-    if (task.status === 'failed') {
-      items.push({
-        color: 'red',
-        dot: <ExclamationCircleOutlined />,
-        children: (
-          <div>
-            <div className="font-medium">处理失败</div>
-            <div className="text-sm text-red-500">
-              {task.error_message || '未知错误'}
-            </div>
-          </div>
-        ),
-      });
-    }
-
-    return items;
-  };
+  const result = task.result;
+  const statItems = [
+    { label: '总投篮次数', value: result?.totalShots ?? 0, icon: FileVideo },
+    { label: '成功投篮', value: result?.madeShots ?? 0, icon: CheckCircle2 },
+    { label: '个人高光', value: result?.targetHighlights ?? result?.timestamps?.length ?? 0, icon: UserRound },
+    { label: '跟踪覆盖率', value: `${((result?.tracking?.coverage ?? 0) * 100).toFixed(1)}%`, icon: Clock3 },
+  ];
 
   return (
-    <div className={`status-display ${className}`}>
-      <Row gutter={[16, 16]}>
-        {/* 基本信息 */}
-        <Col xs={24} lg={12}>
-          <Card title="任务信息" size="small">
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">任务ID:</span>
-                <span className="font-mono text-sm">{task.id}</span>
+    <div className={`space-y-6 ${className}`}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Task Overview</div>
+                <h3 className="mt-2 text-xl font-semibold text-slate-950">任务信息</h3>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">状态:</span>
-                {getStatusTag(task.status)}
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">创建时间:</span>
-                <span className="text-sm">{formatTimestamp(task.created_at)}</span>
-              </div>
-              {task.video_file && (
-                <>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">文件名:</span>
-                    <span className="text-sm truncate max-w-32" title={task.video_file.name}>
-                      {task.video_file.name}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">文件大小:</span>
-                    <span className="text-sm">{formatFileSize(task.video_file.size)}</span>
-                  </div>
-                  {task.video_file.duration && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">视频时长:</span>
-                      <span className="text-sm">{formatDuration(task.video_file.duration)}</span>
-                    </div>
-                  )}
-                </>
-              )}
+              {getStatusChip(task.status)}
             </div>
-          </Card>
-        </Col>
 
-        {/* 处理统计 */}
-        <Col xs={24} lg={12}>
-          <Card title="处理统计" size="small">
-            {task.status === 'completed' && task.result ? (
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Statistic
-                    title="总投篮次数"
-                    value={(task.result as any).totalShots || 0}
-                    prefix={<PlayCircleOutlined />}
-                  />
-                </Col>
-                <Col span={12}>
-                  <Statistic
-                    title="成功投篮"
-                    value={(task.result as any).madeShots || 0}
-                    prefix={<CheckCircleOutlined />}
-                    valueStyle={{ color: '#52c41a' }}
-                  />
-                </Col>
-                <Col span={12}>
-                  <Statistic
-                    title="命中率"
-                    value={(task.result as any).accuracy || 0}
-                    precision={1}
-                    suffix="%"
-                    valueStyle={{ color: '#1890ff' }}
-                  />
-                </Col>
-                <Col span={12}>
-                  <Statistic
-                    title="片段数量"
-                    value={((task.result as any).timestamps || []).length}
-                    prefix={<ClockCircleOutlined />}
-                  />
-                </Col>
-              </Row>
-            ) : (
-              <div className="text-center text-gray-500 py-8">
-                <FileOutlined className="text-2xl mb-2" />
-                <div>处理完成后将显示统计数据</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">任务 ID</div>
+                <div className="mt-2 break-all font-mono text-sm text-slate-700">{task.id}</div>
               </div>
-            )}
-          </Card>
-        </Col>
-
-        {/* 处理时间线 */}
-        <Col xs={24}>
-          <Card title="处理时间线" size="small">
-            <Timeline items={getTimelineItems()} />
-          </Card>
-        </Col>
-
-        {/* 错误信息 */}
-        {task.status === 'failed' && task.error_message && (
-          <Col xs={24}>
-            <Alert
-              message="处理失败"
-              description={task.error_message}
-              type="error"
-              showIcon
-              action={
-                onRetry && (
-                  <Button 
-                    size="small" 
-                    danger 
-                    onClick={onRetry} 
-                    icon={<ReloadOutlined />}
-                    loading={retryLoading}
-                  >
-                    重试
-                  </Button>
-                )
-              }
-            />
-          </Col>
-        )}
-
-        {/* 操作按钮 */}
-        {task.status === 'completed' && (
-          <Col xs={24}>
-            <Card size="small">
-              <div className="text-center">
-                <Space size="middle">
-                  {task.result && (task.result as any).highlightVideo && (
-                    <Button
-                      type="primary"
-                      size="large"
-                      icon={<FileOutlined />}
-                      onClick={onViewResult}
-                    >
-                      下载视频
-                    </Button>
-                  )}
-                </Space>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">创建时间</div>
+                <div className="mt-2 text-sm text-slate-700">{formatTimestamp(task.created_at)}</div>
               </div>
-            </Card>
-          </Col>
-        )}
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">当前阶段</div>
+                <div className="mt-2 text-sm text-slate-700">{task.stage || '等待开始'}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">最近更新时间</div>
+                <div className="mt-2 text-sm text-slate-700">{formatTimestamp(task.updated_at)}</div>
+              </div>
+              {task.video_file ? (
+                <>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-slate-400">文件名</div>
+                    <div className="mt-2 text-sm text-slate-700">{task.video_file.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-slate-400">文件大小</div>
+                    <div className="mt-2 text-sm text-slate-700">{formatFileSize(task.video_file.size)}</div>
+                  </div>
+                  {task.video_file.duration ? (
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-slate-400">视频时长</div>
+                      <div className="mt-2 text-sm text-slate-700">{formatDuration(task.video_file.duration)}</div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
 
-        {/* 处理配置信息（精简版） */}
-        {task.config && (
-          <Col xs={24}>
-            <Card title="处理配置" size="small">
-              <Row gutter={[16, 8]}>
-                <Col xs={12} sm={6}>
-                  <div className="text-center">
-                    <div className="text-lg font-semibold">{task.config.beforeSeconds}s</div>
-                    <div className="text-xs text-gray-500">进球前保留</div>
+            {task.config ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <div className="text-sm font-medium text-slate-900">处理配置</div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                  <div>进球前保留：{task.config.beforeSeconds}s</div>
+                  <div>进球后保留：{task.config.afterSeconds}s</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Stats</div>
+              <h3 className="mt-2 text-xl font-semibold text-slate-950">处理统计</h3>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {statItems.map(({ label, value, icon: Icon }) => (
+                <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-slate-500">{label}</div>
+                    <Icon size={16} className="text-orange-500" />
                   </div>
-                </Col>
-                <Col xs={12} sm={6}>
-                  <div className="text-center">
-                    <div className="text-lg font-semibold">{task.config.afterSeconds}s</div>
-                    <div className="text-xs text-gray-500">进球后保留</div>
-                  </div>
-                </Col>
-              </Row>
-            </Card>
-          </Col>
-        )}
-      </Row>
+                  <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {task.status === 'failed' && task.error_message ? (
+              <Alert status="danger">
+                <div className="flex flex-col gap-2">
+                  <div className="font-medium text-current">处理失败</div>
+                  <div className="text-sm text-current/80">{task.error_message}</div>
+                  {onRetry ? (
+                    <div>
+                      <Button variant="danger-soft" isDisabled={retryLoading} onClick={onRetry}>
+                        <span className="inline-flex items-center gap-2">
+                          <RefreshCcw size={14} />
+                          {retryLoading ? '刷新中...' : '重试'}
+                        </span>
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </Alert>
+            ) : null}
+          </div>
+        </Card>
+      </div>
+
+      {task.status === 'completed' ? (
+        <Card className="border border-slate-900/5 bg-slate-950 p-6 text-white shadow-[0_30px_90px_rgba(15,23,42,0.26)]">
+          <div className="space-y-4">
+            <div className="max-w-3xl text-sm leading-6 text-slate-300">
+              {task.result?.highlightVideo
+                ? '本地处理已完成。建议先查看结果页确认你的进球和助攻归因，再决定是否直接下载成片。'
+                : '本地处理已完成。当前没有可下载的个人高光视频，但你仍然可以进入结果页查看统计和识别结果。'}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              {onViewResult ? (
+                <Button variant="primary" onClick={onViewResult} className="rounded-full">
+                  <span className="inline-flex items-center gap-2">
+                    <Eye size={16} />
+                    查看处理结果
+                  </span>
+                </Button>
+              ) : null}
+              {task.result?.highlightVideo && onDownloadResult ? (
+                <Button variant="secondary" onClick={onDownloadResult} className="rounded-full">
+                  <span className="inline-flex items-center gap-2">
+                    <Download size={16} />
+                    下载高光视频
+                  </span>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 };

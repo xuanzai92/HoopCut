@@ -2,9 +2,26 @@
  * HTTP 客户端配置
  */
 import axios from 'axios';
-import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import type {
+  AxiosError,
+  AxiosInstance,
+  AxiosProgressEvent,
+  AxiosRequestConfig,
+  AxiosResponse,
+} from 'axios';
 import { API_CONFIG, ERROR_MESSAGES } from '@/utils/constants';
-import type { ApiResponse } from '@/types';
+
+export class HttpRequestError extends Error {
+  status?: number;
+  code?: string;
+
+  constructor(message: string, options?: { status?: number; code?: string }) {
+    super(message);
+    this.name = 'HttpRequestError';
+    this.status = options?.status;
+    this.code = options?.code;
+  }
+}
 
 // 创建 axios 实例
 const createHttpClient = (): AxiosInstance => {
@@ -55,49 +72,77 @@ const createHttpClient = (): AxiosInstance => {
   return client;
 };
 
+const extractMessageFromResponse = (data: unknown): string | undefined => {
+  if (!data || typeof data !== 'object') {
+    return undefined;
+  }
+
+  const possibleMessage = (data as { message?: unknown }).message;
+  if (typeof possibleMessage === 'string' && possibleMessage.trim()) {
+    return possibleMessage;
+  }
+
+  const possibleError = (data as { error?: unknown }).error;
+  if (typeof possibleError === 'string' && possibleError.trim()) {
+    return possibleError;
+  }
+
+  return undefined;
+};
+
 // 错误处理函数
 const handleApiError = (error: AxiosError): Error => {
   if (error.response) {
     // 服务器响应错误
     const { status, data } = error.response;
-    const message = (data as any)?.message || (data as any)?.error || ERROR_MESSAGES.UNKNOWN_ERROR;
+    const message = extractMessageFromResponse(data) || ERROR_MESSAGES.UNKNOWN_ERROR;
     
     switch (status) {
       case 400:
-        return new Error(message || '请求参数错误');
+        return new HttpRequestError(message || '请求参数错误', { status });
       case 401:
-        return new Error('未授权访问');
+        return new HttpRequestError('未授权访问', { status });
       case 403:
-        return new Error('访问被拒绝');
+        return new HttpRequestError('访问被拒绝', { status });
       case 404:
-        return new Error('请求的资源不存在');
+        return new HttpRequestError('请求的资源不存在', { status });
       case 413:
-        return new Error(ERROR_MESSAGES.FILE_TOO_LARGE);
+        return new HttpRequestError(ERROR_MESSAGES.FILE_TOO_LARGE, { status });
       case 422:
-        return new Error(message || '请求数据验证失败');
+        return new HttpRequestError(message || '请求数据验证失败', { status });
       case 429:
-        return new Error('请求过于频繁，请稍后再试');
+        return new HttpRequestError('请求过于频繁，请稍后再试', { status });
       case 500:
-        return new Error('服务器内部错误');
+        return new HttpRequestError('服务器内部错误', { status });
       case 502:
-        return new Error('网关错误');
+        return new HttpRequestError('网关错误', { status });
       case 503:
-        return new Error('服务暂时不可用');
+        return new HttpRequestError('服务暂时不可用', { status });
       case 504:
-        return new Error('网关超时');
+        return new HttpRequestError('网关超时', { status });
       default:
-        return new Error(message || `服务器错误 (${status})`);
+        return new HttpRequestError(message || `服务器错误 (${status})`, { status });
     }
   } else if (error.request) {
     // 网络错误
     if (error.code === 'ECONNABORTED') {
-      return new Error('请求超时，请检查网络连接');
+      return new HttpRequestError('请求超时，请检查网络连接', { code: error.code });
     }
-    return new Error(ERROR_MESSAGES.NETWORK_ERROR);
+    return new HttpRequestError(ERROR_MESSAGES.NETWORK_ERROR, { code: error.code });
   } else {
     // 其他错误
-    return new Error(error.message || ERROR_MESSAGES.UNKNOWN_ERROR);
+    return new HttpRequestError(error.message || ERROR_MESSAGES.UNKNOWN_ERROR, { code: error.code });
   }
+};
+
+const shouldRetryError = (error: Error): boolean => {
+  const status = (error as HttpRequestError).status;
+
+  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return false;
+  }
+
+  return true;
 };
 
 // 创建 HTTP 客户端实例
@@ -106,50 +151,50 @@ export const httpClient = createHttpClient();
 // 通用请求方法
 export class HttpService {
   // GET 请求
-  static async get<T = any>(
+  static async get<T = unknown>(
     url: string,
     config?: AxiosRequestConfig
-  ): Promise<ApiResponse<T>> {
-    const response = await httpClient.get(url, config);
+  ): Promise<T> {
+    const response = await httpClient.get<T>(url, config);
     return response.data;
   }
 
   // POST 请求
-  static async post<T = any>(
+  static async post<T = unknown, D = unknown>(
     url: string,
-    data?: any,
-    config?: AxiosRequestConfig
-  ): Promise<ApiResponse<T>> {
-    const response = await httpClient.post(url, data, config);
+    data?: D,
+    config?: AxiosRequestConfig<D>
+  ): Promise<T> {
+    const response = await httpClient.post<T>(url, data, config);
     return response.data;
   }
 
   // PUT 请求
-  static async put<T = any>(
+  static async put<T = unknown, D = unknown>(
     url: string,
-    data?: any,
-    config?: AxiosRequestConfig
-  ): Promise<ApiResponse<T>> {
-    const response = await httpClient.put(url, data, config);
+    data?: D,
+    config?: AxiosRequestConfig<D>
+  ): Promise<T> {
+    const response = await httpClient.put<T>(url, data, config);
     return response.data;
   }
 
   // DELETE 请求
-  static async delete<T = any>(
+  static async delete<T = unknown>(
     url: string,
     config?: AxiosRequestConfig
-  ): Promise<ApiResponse<T>> {
-    const response = await httpClient.delete(url, config);
+  ): Promise<T> {
+    const response = await httpClient.delete<T>(url, config);
     return response.data;
   }
 
   // 文件上传
-  static async upload<T = any>(
+  static async upload<T = unknown>(
     url: string,
     formData: FormData,
-    onUploadProgress?: (progressEvent: any) => void
-  ): Promise<ApiResponse<T>> {
-    const response = await httpClient.post(url, formData, {
+    onUploadProgress?: (progressEvent: AxiosProgressEvent) => void
+  ): Promise<T> {
+    const response = await httpClient.post<T>(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -162,7 +207,7 @@ export class HttpService {
   static async download(
     url: string,
     filename?: string,
-    onDownloadProgress?: (progressEvent: any) => void
+    onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void
   ): Promise<Blob> {
     const response = await httpClient.get(url, {
       responseType: 'blob',
@@ -199,6 +244,10 @@ export const withRetry = async <T>(
       return await operation();
     } catch (error) {
       lastError = error as Error;
+
+      if (!shouldRetryError(lastError)) {
+        throw lastError;
+      }
       
       if (attempt === maxAttempts) {
         throw lastError;

@@ -1,0 +1,103 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e8]:
+        - heading "HoopCut" [level=1] [ref=e10]
+        - generic [ref=e11]: 上传比赛视频，先定位你出镜的画面并框选自己，再生成个人进球集锦
+      - generic [ref=e13]:
+        - generic [ref=e191]:
+          - generic [ref=e192]:
+            - generic [ref=e193]:
+              - generic [ref=e194]:
+                - img "video-camera" [ref=e195]:
+                  - img [ref=e196]
+                - heading "run-demo.mp4" [level=4] [ref=e198]
+              - generic [ref=e199]:
+                - generic [ref=e200]:
+                  - generic [ref=e201]: "文件大小:"
+                  - generic [ref=e202]: 1.58 MB
+                - generic [ref=e203]:
+                  - generic [ref=e204]: "视频时长:"
+                  - generic [ref=e205]: 未知
+                - generic [ref=e206]:
+                  - generic [ref=e207]: "文件格式:"
+                  - generic [ref=e208]: mp4
+            - button "delete 移除" [ref=e210] [cursor=pointer]:
+              - img "delete" [ref=e212]:
+                - img [ref=e213]
+              - generic [ref=e215]: 移除
+          - alert [ref=e216]:
+            - img "info-circle" [ref=e217]:
+              - img [ref=e218]
+            - generic [ref=e221]: 如果你不是在开头出镜，先把下面视频拖到你第一次清晰出镜的位置，再截取当前画面。
+          - generic [ref=e222]:
+            - generic [ref=e223]:
+              - generic [ref=e224]:
+                - generic [ref=e225]:
+                  - img "picture" [ref=e227]:
+                    - img [ref=e228]
+                  - strong [ref=e232]: 选择框选起点
+                - generic [ref=e233]: 当前播放位置只是候选画面。点击右侧按钮后，后续框选和跟踪才会从该时间点开始。
+              - button "picture 使用当前播放位置作为框选帧" [ref=e234] [cursor=pointer]:
+                - img "picture" [ref=e236]:
+                  - img [ref=e237]
+                - generic [ref=e239]: 使用当前播放位置作为框选帧
+            - generic [ref=e241]:
+              - generic [ref=e242]: 当前播放位置：00:00（0.00s）
+              - generic [ref=e243]: 当前框选帧： 00:00（0.00s）
+        - generic [ref=e246]:
+          - generic [ref=e247]:
+            - generic [ref=e248]:
+              - generic [ref=e249]:
+                - img "user" [ref=e251]:
+                  - img [ref=e252]
+                - strong [ref=e256]: 框选你自己
+              - generic [ref=e257]: 在你选中的出镜画面里拖拽框住完整身体区域。后续人物跟踪会从这个时间点开始初始化目标。
+            - button "delete 清除选区" [disabled] [ref=e258]:
+              - generic:
+                - img "delete":
+                  - img
+              - generic: 清除选区
+          - alert [ref=e259]:
+            - img "info-circle" [ref=e260]:
+              - img [ref=e261]
+            - generic [ref=e263]:
+              - generic [ref=e264]: 当前框选帧：00:00（0.00s）
+              - generic [ref=e265]: 建议框住头到脚，并尽量包含完整球衣区域。
+          - img "人物框选帧" [ref=e268]
+          - generic [ref=e269]: 尚未选择人物区域
+        - generic [ref=e32]:
+          - generic [ref=e34]:
+            - generic [ref=e36]:
+              - img "setting" [ref=e37]:
+                - img [ref=e38]
+              - generic [ref=e40]: 剪辑参数设置
+            - button "重置默认" [ref=e42]
+          - generic [ref=e45]:
+            - generic [ref=e47]:
+              - generic [ref=e50]:
+                - generic [ref=e51]: 进球前保留时间
+                - img "question-circle" [ref=e52]:
+                  - img [ref=e53]
+              - generic [ref=e59]:
+                - slider [ref=e64] [cursor=pointer]
+                - generic [ref=e65]: 3.0s
+            - generic [ref=e67]:
+              - generic [ref=e70]:
+                - generic [ref=e71]: 进球后保留时间
+                - img "question-circle" [ref=e72]:
+                  - img [ref=e73]
+              - generic [ref=e79]:
+                - slider [ref=e83] [cursor=pointer]
+                - generic [ref=e84]: 1.0s
+        - generic [ref=e87]:
+          - button "rocket 开始生成个人集锦" [disabled] [ref=e89]:
+            - generic:
+              - img "rocket":
+                - img
+            - generic: 开始生成个人集锦
+          - generic [ref=e91]: 当前版本会从你选中的出镜画面开始做目标跟踪，只导出归因到目标球员的进球镜头。
+  - generic [ref=e92]:
+    - img [ref=e94]
+    - button "Open Tanstack query devtools" [ref=e142] [cursor=pointer]:
+      - img [ref=e143]

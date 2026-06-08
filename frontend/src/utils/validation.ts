@@ -1,34 +1,24 @@
 /**
  * 验证工具函数
  */
+import { FILE_LIMITS } from './constants';
+import type { PlayerSelectionBox } from '@/types';
 
 // 支持的视频格式
-export const SUPPORTED_VIDEO_FORMATS = [
-  'video/mp4',
-  'video/avi',
-  'video/mov',
-  'video/wmv',
-  'video/flv',
-  'video/webm',
-  'video/mkv'
+export const SUPPORTED_VIDEO_FORMATS: readonly string[] = [
+  ...FILE_LIMITS.SUPPORTED_MIME_TYPES,
 ];
 
 // 支持的视频扩展名
-export const SUPPORTED_VIDEO_EXTENSIONS = [
-  'mp4',
-  'avi',
-  'mov',
-  'wmv',
-  'flv',
-  'webm',
-  'mkv'
+export const SUPPORTED_VIDEO_EXTENSIONS: readonly string[] = [
+  ...FILE_LIMITS.SUPPORTED_FORMATS,
 ];
 
-// 最大文件大小（500MB）
-export const MAX_FILE_SIZE = 500 * 1024 * 1024;
+// 最大文件大小（2GB，与本地后端限制一致）
+export const MAX_FILE_SIZE = FILE_LIMITS.MAX_SIZE;
 
 // 最小文件大小（1MB）
-export const MIN_FILE_SIZE = 1024 * 1024;
+export const MIN_FILE_SIZE = FILE_LIMITS.MIN_SIZE;
 
 // 验证视频文件
 export const validateVideoFile = (file: File): { valid: boolean; error?: string } => {
@@ -79,11 +69,60 @@ export const validateProcessingConfig = (config: {
   return { valid: true };
 };
 
-export const validateProcessingConfig2 = (config: any): { valid: boolean; error?: string } => {
-    // 简单的验证逻辑，因为ProcessingConfig类型可能在运行时不可用
-    if (!config) return { valid: false, error: '配置不能为空' };
-    return { valid: true };
-}
+export const validateTargetPlayerBox = (
+  selection: PlayerSelectionBox | null | undefined
+): { valid: boolean; error?: string } => {
+  if (!selection) {
+    return { valid: false, error: '请先定位你出镜的画面，再框选你自己' };
+  }
+
+  const numericFields = [
+    selection.x,
+    selection.y,
+    selection.width,
+    selection.height,
+    selection.frameWidth,
+    selection.frameHeight,
+    selection.selectionTime,
+  ];
+
+  if (numericFields.some((value) => !Number.isFinite(value))) {
+    return { valid: false, error: '人物选区数据无效，请重新框选' };
+  }
+
+  if (selection.width < 20 || selection.height < 20) {
+    return { valid: false, error: '人物选区过小，请重新框选完整身体区域' };
+  }
+
+  if (selection.frameWidth <= 0 || selection.frameHeight <= 0) {
+    return { valid: false, error: '框选画面尺寸无效，请重新选择视频' };
+  }
+
+  if (selection.selectionTime < 0) {
+    return { valid: false, error: '框选时间点无效，请重新选择你出镜的画面' };
+  }
+
+  if (
+    selection.x < 0 ||
+    selection.y < 0 ||
+    selection.x + selection.width > selection.frameWidth ||
+    selection.y + selection.height > selection.frameHeight
+  ) {
+    return { valid: false, error: '人物选区超出当前画面范围，请重新框选' };
+  }
+
+  return { valid: true };
+};
+
+export const validateProcessingConfig2 = (
+  config: { beforeSeconds?: number; afterSeconds?: number } | null | undefined
+): { valid: boolean; error?: string } => {
+  if (!config) {
+    return { valid: false, error: '配置不能为空' };
+  }
+
+  return { valid: true };
+};
 
 // 验证任务ID
 export const validateTaskId = (taskId: string): boolean => {
@@ -125,7 +164,7 @@ export const validatePhone = (phone: string): boolean => {
 };
 
 // 通用必填验证
-export const validateRequired = (value: any, fieldName: string): { valid: boolean; error?: string } => {
+export const validateRequired = (value: unknown, fieldName: string): { valid: boolean; error?: string } => {
   if (value === null || value === undefined || value === '') {
     return { valid: false, error: `${fieldName}不能为空` };
   }

@@ -2,9 +2,10 @@
  * API 服务类
  */
 import { HttpService, withRetry } from './http';
-import { API_ENDPOINTS } from '@/utils/constants';
+import { API_CONFIG, API_ENDPOINTS } from '@/utils/constants';
 import { io, Socket } from 'socket.io-client';
 import type {
+  ApiResponse,
   UploadResponse,
   ProgressInfo,
   ProcessingResult,
@@ -16,16 +17,59 @@ import type {
   DownloadParams,
 } from '@/types';
 
+interface UploadInitResponse {
+  success: boolean;
+  fileId: string;
+  message: string;
+  error?: string;
+}
+
+interface TaskProgressSocketMessage {
+  taskId: string;
+  data: ProgressInfo;
+}
+
+interface TasksResponse {
+  success: boolean;
+  data?: {
+    tasks: ProcessingResult[];
+    total: number;
+    page: number;
+    pageSize: number;
+  };
+  message?: string;
+  error?: string;
+}
+
+interface StatsResponse {
+  success: boolean;
+  data?: {
+    total_tasks: number;
+    completed_tasks: number;
+    failed_tasks: number;
+    total_processing_time: number;
+    total_videos_processed: number;
+    average_processing_time: number;
+  };
+  message?: string;
+  error?: string;
+}
+
+const getResponseError = (response: Pick<ApiResponse<unknown>, 'message' | 'error'>, fallback: string): string => {
+  return response.message || response.error || fallback;
+};
+
 export class ApiService {
   private static socket: Socket | null = null;
 
   /**
    * 初始化 WebSocket 连接
    */
-  static connectWebSocket(onTaskProgress: (data: any) => void) {
+  static connectWebSocket(onTaskProgress: (data: TaskProgressSocketMessage) => void) {
     if (!this.socket) {
-      this.socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
-        transports: ['websocket', 'polling']
+      const socketUrl = API_CONFIG.SOCKET_URL || undefined;
+      this.socket = io(socketUrl, {
+        transports: ['polling']
       });
       
       this.socket.on('connect', () => {
@@ -39,7 +83,7 @@ export class ApiService {
 
     // 移除之前的监听器以避免重复
     this.socket.off('task_progress');
-    this.socket.on('task_progress', (message) => {
+    this.socket.on('task_progress', (message: TaskProgressSocketMessage) => {
         onTaskProgress(message);
     });
 
@@ -65,13 +109,13 @@ export class ApiService {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
     // 1. Initialize upload
-    const initResponse = await HttpService.post<{ success: boolean; fileId: string; message: string }>(
+    const initResponse = await HttpService.post<UploadInitResponse>(
       '/api/upload/init', 
       { filename: file.name }
     );
     
     if (!initResponse.success) {
-      throw new Error(initResponse.message || 'Upload initialization failed');
+      throw new Error(getResponseError(initResponse, 'Upload initialization failed'));
     }
 
     const fileId = initResponse.fileId;
@@ -109,7 +153,7 @@ export class ApiService {
     );
 
     if (!completeResponse.success) {
-      throw new Error(completeResponse.message || 'Upload completion failed');
+      throw new Error(getResponseError(completeResponse, 'Upload completion failed'));
     }
 
     return completeResponse;
@@ -119,16 +163,17 @@ export class ApiService {
    * 开始处理视频
    */
   static async processVideo(params: ProcessParams): Promise<ProcessResponse> {
-    const response = await HttpService.post(API_ENDPOINTS.PROCESS, {
+    const response = await HttpService.post<ProcessResponse & { error?: string }>(API_ENDPOINTS.PROCESS, {
       fileId: params.fileId,
       beforeSeconds: params.beforeSeconds || 8,
       afterSeconds: params.afterSeconds || 2,
+      targetPlayerBox: params.targetPlayerBox ?? null,
     });
     
     if (!response.success) {
-      throw new Error((response as any).message || (response as any).error || '开始处理失败');
+      throw new Error(getResponseError(response, '开始处理失败'));
     }
-    return response as unknown as ProcessResponse;
+    return response;
   }
 
   /**
@@ -139,7 +184,7 @@ export class ApiService {
       return HttpService.get<ProgressInfo>(`${API_ENDPOINTS.PROGRESS}/${params.taskId}`);
     });
 
-    return response as unknown as ProgressInfo;
+    return response;
   }
 
   /**
@@ -178,11 +223,11 @@ export class ApiService {
    * 获取下载链接
    */
   static getDownloadUrl(filename: string): string {
-    return `${API_ENDPOINTS.DOWNLOAD}/${filename}`;
+    return `${API_CONFIG.BASE_URL}${API_ENDPOINTS.DOWNLOAD}/${filename}`;
   }
 
   static getStreamUrl(filename: string): string {
-    return `/api/stream/${filename}`;
+    return `${API_CONFIG.BASE_URL}/api/stream/${filename}`;
   }
 
   /**
@@ -190,7 +235,7 @@ export class ApiService {
    */
   static async healthCheck(): Promise<HealthCheckResponse> {
     const response = await HttpService.get<HealthCheckResponse>(API_ENDPOINTS.HEALTH);
-    return response as unknown as HealthCheckResponse;
+    return response;
   }
 
   /**
@@ -222,7 +267,7 @@ export class ApiService {
     const poll = async () => {
       try {
         attempts++;
-        const progress = await this.getProgress({ fileId });
+        const progress = await this.getProgress({ taskId: fileId });
         
         onProgress(progress);
 
@@ -270,7 +315,7 @@ export class ApiService {
    * 批量操作 - 删除任务
    */
   static async deleteTasks(taskIds: string[]): Promise<void> {
-    const response = await HttpService.post('/api/tasks/delete', { task_ids: taskIds });
+    const response = await HttpService.post<ApiResponse<unknown>>('/api/tasks/delete', { task_ids: taskIds });
     
     if (!response.success) {
       throw new Error(response.message || response.error || '删除任务失败');
@@ -300,10 +345,10 @@ export class ApiService {
       }
     });
 
-    const response = await HttpService.get(`/api/tasks?${queryParams.toString()}`);
+    const response = await HttpService.get<TasksResponse>(`/api/tasks?${queryParams.toString()}`);
     
     if (!response.success || !response.data) {
-      throw new Error(response.message || response.error || '获取任务列表失败');
+      throw new Error(getResponseError(response, '获取任务列表失败'));
     }
 
     return response.data;
@@ -320,10 +365,10 @@ export class ApiService {
     total_videos_processed: number;
     average_processing_time: number;
   }> {
-    const response = await HttpService.get('/api/stats');
+    const response = await HttpService.get<StatsResponse>('/api/stats');
     
     if (!response.success || !response.data) {
-      throw new Error(response.message || response.error || '获取统计信息失败');
+      throw new Error(getResponseError(response, '获取统计信息失败'));
     }
 
     return response.data;

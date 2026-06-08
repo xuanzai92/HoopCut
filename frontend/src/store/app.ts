@@ -13,7 +13,8 @@ import type {
   NotificationType,
   Theme,
   Language,
-  ProcessingConfig
+  ProcessingConfig,
+  VideoFile,
 } from '@/types';
 import { 
   STORAGE_KEYS, 
@@ -37,7 +38,7 @@ interface AppStore extends AppState {
 
   // 上传状态操作
   setUploadProgress: (progress: number) => void;
-  setUploadFile: (file: any) => void;
+  setUploadFile: (file: VideoFile | undefined) => void;
   setUploadError: (error: string | undefined) => void;
   setUploading: (isUploading: boolean) => void;
   clearUpload: () => void;

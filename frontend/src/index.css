@@ -1,17 +1,40 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "@heroui/styles/base/base.css" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+
+@import "@heroui/styles/components/close-button.css" layer(components);
+@import "@heroui/styles/components/description.css" layer(components);
+@import "@heroui/styles/components/error-message.css" layer(components);
+@import "@heroui/styles/components/field-error.css" layer(components);
+@import "@heroui/styles/components/label.css" layer(components);
+
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/card.css" layer(components);
+@import "@heroui/styles/components/chip.css" layer(components);
+@import "@heroui/styles/components/alert.css" layer(components);
+@import "@heroui/styles/components/empty-state.css" layer(components);
+@import "@heroui/styles/components/progress-bar.css" layer(components);
+@import "@heroui/styles/components/spinner.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
+@import "@heroui/styles/components/modal.css" layer(components);
+@import "@heroui/styles/components/tabs.css" layer(components);
+@import "@heroui/styles/components/toast.css" layer(components);
+
+@import "@heroui/styles/themes/default" layer(theme);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
 
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  
+
   color-scheme: light;
-  color: #1f2937;
-  background-color: #ffffff;
+  color: #0f172a;
+  background-color: #fffdf8;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -27,37 +50,11 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(180deg, #fff8f1 0%, #fffdf8 18%, #f8fafc 44%, #eef2ff 100%);
 }
 
 #root {
   min-height: 100vh;
-}
-
-/* Ant Design customizations */
-.ant-btn-primary {
-  background: linear-gradient(135deg, #FF6B35 0%, #ff8c42 100%);
-  border-color: #FF6B35;
-  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.2);
-}
-
-.ant-btn-primary:hover {
-  background: linear-gradient(135deg, #ff8c42 0%, #FF6B35 100%);
-  border-color: #ff8c42;
-  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
-}
-
-.ant-progress-circle .ant-progress-text {
-  font-weight: 600;
-}
-
-.ant-upload-drag:hover {
-  border-color: #FF6B35;
-}
-
-.ant-upload-drag.ant-upload-drag-hover {
-  border-color: #FF6B35;
-  background-color: rgba(255, 107, 53, 0.02);
 }
 
 /* Custom scrollbar */
@@ -78,65 +75,47 @@ body {
   background: #a8a8a8;
 }
 
-/* Mobile optimizations */
-@media (max-width: 640px) {
-  .ant-card {
-    margin: 0 -8px;
-    border-radius: 8px;
-  }
-  
-  .ant-card-body {
-    padding: 16px;
-  }
-  
-  .ant-table-wrapper {
-    font-size: 14px;
-  }
-  
-  .ant-btn {
-    height: 32px;
-    padding: 4px 12px;
-    font-size: 14px;
-  }
-  
-  .ant-input {
-    height: 32px;
-  }
-  
-  .ant-select {
-    font-size: 14px;
-  }
-  
-  .ant-select-selector {
-    height: 32px !important;
-  }
-  
-  .ant-tabs-tab {
-    padding: 8px 12px;
-    font-size: 14px;
-  }
-  
-  .ant-modal {
-    margin: 16px;
-    max-width: calc(100vw - 32px);
-  }
-  
-  .ant-modal-body {
-    padding: 16px;
-  }
+.font-serif {
+  font-family: 'Instrument Serif', Georgia, serif;
 }
 
-/* Touch-friendly interactions */
-@media (hover: none) and (pointer: coarse) {
-  .ant-btn {
-    min-height: 44px;
-  }
-  
-  .ant-input {
-    min-height: 44px;
-  }
-  
-  .ant-select-selector {
-    min-height: 44px !important;
+.hero-range {
+  width: 100%;
+  appearance: none;
+  height: 10px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgba(251, 146, 60, 0.24), rgba(99, 102, 241, 0.24));
+  outline: none;
+}
+
+.hero-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f97316, #f59e0b);
+  border: 3px solid #fff;
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.28);
+  cursor: pointer;
+}
+
+.hero-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f97316, #f59e0b);
+  border: 3px solid #fff;
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.28);
+  cursor: pointer;
+}
+
+.hero-range:disabled {
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .upload-zone {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
 }

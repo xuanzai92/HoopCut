@@ -166,8 +166,7 @@ class VideoProcessor:
         try:
             with open(list_file, 'w', encoding='utf-8') as f:
                 for clip in clips:
-                    # 使用正斜杠（即使在Windows上也能工作）
-                    abs_path = os.path.abspath(clip).replace('\\', '/')
+                    abs_path = os.path.abspath(clip)
                     f.write(f"file '{abs_path}'\n")
             
             

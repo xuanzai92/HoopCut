@@ -21,8 +21,8 @@ export type AsyncResult<T> = Promise<T>;
 export type MaybePromise<T> = T | Promise<T>;
 
 // 事件处理类型
-export type EventHandler<T = any> = (event: T) => void;
-export type AsyncEventHandler<T = any> = (event: T) => Promise<void>;
+export type EventHandler<T = unknown> = (event: T) => void;
+export type AsyncEventHandler<T = unknown> = (event: T) => Promise<void>;
 
 // 组件属性类型
 export interface BaseComponentProps {
@@ -32,7 +32,7 @@ export interface BaseComponentProps {
 }
 
 // 表单字段类型
-export interface FormField<T = any> {
+export interface FormField<T = unknown> {
   name: string;
   label: string;
   value: T;
@@ -59,6 +59,6 @@ export interface SortConfig {
 // 筛选类型
 export interface FilterConfig {
   field: string;
-  value: any;
+  value: unknown;
   operator: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'in';
 }

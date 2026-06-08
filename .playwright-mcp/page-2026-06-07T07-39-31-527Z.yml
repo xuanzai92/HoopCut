@@ -1,0 +1,100 @@
+- main [ref=e4]:
+  - generic [ref=e250]:
+    - generic [ref=e252]:
+      - generic [ref=e253]:
+        - button "arrow-left 返回首页" [ref=e254] [cursor=pointer]:
+          - img "arrow-left" [ref=e256]:
+            - img [ref=e257]
+          - generic [ref=e259]: 返回首页
+        - generic [ref=e260]:
+          - heading "个人高光结果" [level=1] [ref=e261]
+          - paragraph [ref=e262]: 当前展示的是归因到你自己的进球剪辑结果
+      - generic [ref=e263]:
+        - button "reload" [ref=e265] [cursor=pointer]:
+          - img "reload" [ref=e267]:
+            - img [ref=e268]
+        - button "share-alt" [ref=e271] [cursor=pointer]:
+          - img "share-alt" [ref=e273]:
+            - img [ref=e274]
+        - button "download" [disabled] [ref=e277]:
+          - generic:
+            - img "download":
+              - img
+    - generic [ref=e278]:
+      - generic [ref=e280]:
+        - generic [ref=e283]: 个人高光视频
+        - generic [ref=e285]:
+          - img "暂无数据" [ref=e287]
+          - generic [ref=e293]: 检测到进球，但当前最小版本未能将其归因到你
+      - generic [ref=e296]:
+        - generic [ref=e298]:
+          - generic [ref=e301]: 个人结果概览
+          - generic [ref=e302]:
+            - generic [ref=e303]:
+              - generic [ref=e305]:
+                - generic [ref=e306]: 总投篮
+                - generic [ref=e307]:
+                  - img "aim" [ref=e309]:
+                    - img [ref=e310]
+                  - generic [ref=e313]: "6"
+              - generic [ref=e315]:
+                - generic [ref=e316]: 全场进球
+                - generic [ref=e317]:
+                  - img "check-circle" [ref=e319]:
+                    - img [ref=e320]
+                  - generic [ref=e323]: "4"
+              - generic [ref=e325]:
+                - generic [ref=e326]: 你的进球
+                - generic [ref=e327]:
+                  - img "user" [ref=e329]:
+                    - img [ref=e330]
+                  - generic [ref=e332]: "0"
+              - generic [ref=e334]:
+                - generic [ref=e335]: 命中率
+                - generic [ref=e336]:
+                  - img "trophy" [ref=e338]:
+                    - img [ref=e339]
+                  - generic [ref=e341]: "66.6"
+                  - generic [ref=e342]: "%"
+            - generic [ref=e343]:
+              - generic [ref=e344]:
+                - generic [ref=e345]:
+                  - generic [ref=e346]: 人物跟踪覆盖率
+                  - generic [ref=e347]: 100.0%
+                - progressbar [ref=e348]
+              - generic [ref=e352]: 检测到进球，但当前最小版本未能将其归因到你
+        - generic [ref=e354]:
+          - generic [ref=e357]: 输出信息
+          - generic [ref=e359]:
+            - generic [ref=e360]:
+              - generic [ref=e361]: 是否生成集锦
+              - generic [ref=e362]: 未生成
+            - generic [ref=e363]:
+              - generic [ref=e364]: 标注视频
+              - generic [ref=e365]: 未生成
+            - generic [ref=e366]:
+              - generic [ref=e367]: 初始选区
+              - generic [ref=e368]: 131 x 210
+            - generic [ref=e369]:
+              - generic [ref=e370]: 跟踪起点
+              - generic [ref=e371]: 00:00 (0.00s)
+        - generic [ref=e373]:
+          - generic [ref=e375]:
+            - generic [ref=e376]: 你的进球时刻 (0)
+            - generic [ref=e378]: 全场进球 4 个
+          - generic [ref=e380]:
+            - img "clock-circle" [ref=e381]:
+              - img [ref=e382]
+            - generic [ref=e385]: 当前没有归因到你的进球时刻
+    - generic [ref=e389]:
+      - tablist [ref=e390]:
+        - generic [ref=e392]:
+          - tab "你的进球 (0)" [selected] [ref=e394] [cursor=pointer]
+          - tab "全场进球 (4)" [ref=e396] [cursor=pointer]
+          - tab "任务信息" [ref=e398] [cursor=pointer]
+      - tabpanel "你的进球 (0)" [ref=e401]:
+        - generic [ref=e402]:
+          - img "暂无数据" [ref=e404]
+          - generic [ref=e410]: 检测到进球，但当前最小版本未能将其归因到你
+    - button "继续处理新视频" [ref=e412] [cursor=pointer]:
+      - generic [ref=e413]: 继续处理新视频

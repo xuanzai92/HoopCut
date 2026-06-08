@@ -1,11 +1,22 @@
 /**
  * 路由配置
  */
+import { Suspense, lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Home } from '@/pages/Home';
-import { Progress } from '@/pages/Progress';
-import { Result } from '@/pages/Result';
+import LoadingState from '@/components/common/LoadingState';
+
+const Home = lazy(() =>
+  import('@/pages/Home').then((module) => ({ default: module.Home })),
+);
+const Progress = lazy(() => import('@/pages/Progress'));
+const Result = lazy(() => import('@/pages/Result'));
+
+const withPageSuspense = (element: React.ReactNode) => (
+  <Suspense fallback={<LoadingState type="page" tip="页面加载中..." size="large" />}>
+    {element}
+  </Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -14,15 +25,15 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Home />,
+        element: withPageSuspense(<Home />),
       },
       {
         path: 'progress/:fileId',
-        element: <Progress />,
+        element: withPageSuspense(<Progress />),
       },
       {
         path: 'result/:fileId',
-        element: <Result />,
+        element: withPageSuspense(<Result />),
       },
       {
         path: '*',

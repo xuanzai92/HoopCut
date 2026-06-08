@@ -1,12 +1,14 @@
 /**
  * React Query hooks for API operations
  */
-import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import type {
+  UseMutationOptions,
+  UseQueryOptions,
+} from '@tanstack/react-query';
 import { ApiService } from './api';
 import type {
-  UploadParams,
   UploadResponse,
   ProcessParams,
   ProcessResponse,
@@ -15,13 +17,32 @@ import type {
   HealthCheckResponse,
   DownloadParams,
 } from '@/types';
+import { HttpRequestError } from './http';
+
+type TaskListParams = {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+};
+
+const shouldRetryQuery = (failureCount: number, error: Error): boolean => {
+  const status = (error as HttpRequestError).status;
+
+  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return false;
+  }
+
+  return failureCount < 1;
+};
 
 // Query Keys
 export const QUERY_KEYS = {
   HEALTH: ['health'],
   PROGRESS: (fileId: string) => ['progress', fileId],
   RESULT: (fileId: string) => ['result', fileId],
-  TASKS: (params?: any) => ['tasks', params],
+  TASKS: (params?: TaskListParams) => ['tasks', params],
   STATS: ['stats'],
 } as const;
 
@@ -45,12 +66,16 @@ export const useHealthCheck = (
  */
 export const useTaskProgress = (
   taskId: string,
-  options?: UseQueryOptions<ProgressInfo, Error>
+  options?: Omit<
+    UseQueryOptions<ProgressInfo, Error, ProgressInfo, ReturnType<typeof QUERY_KEYS.PROGRESS>>,
+    'queryKey' | 'queryFn'
+  >
 ) => {
   return useQuery({
     queryKey: QUERY_KEYS.PROGRESS(taskId),
     queryFn: () => ApiService.getProgress({ taskId }),
     enabled: !!taskId,
+    retry: shouldRetryQuery,
     refetchInterval: (query) => {
       // 如果任务已完成或失败，停止轮询
       const data = query.state.data;
@@ -69,12 +94,16 @@ export const useTaskProgress = (
  */
 export const useTaskResult = (
   taskId: string,
-  options?: UseQueryOptions<ProcessingResult, Error>
+  options?: Omit<
+    UseQueryOptions<ProcessingResult, Error, ProcessingResult, ReturnType<typeof QUERY_KEYS.RESULT>>,
+    'queryKey' | 'queryFn'
+  >
 ) => {
   return useQuery({
     queryKey: QUERY_KEYS.RESULT(taskId),
     queryFn: () => ApiService.getResult(taskId),
     enabled: !!taskId,
+    retry: shouldRetryQuery,
     staleTime: 300000, // 5分钟内不重新获取
     ...options,
   });
@@ -84,14 +113,16 @@ export const useTaskResult = (
  * 任务列表查询
  */
 export const useTasks = (
-  params?: {
-    page?: number;
-    pageSize?: number;
-    status?: string;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-  },
-  options?: UseQueryOptions<any, Error>
+  params?: TaskListParams,
+  options?: Omit<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof ApiService.getTasks>>,
+      Error,
+      Awaited<ReturnType<typeof ApiService.getTasks>>,
+      ReturnType<typeof QUERY_KEYS.TASKS>
+    >,
+    'queryKey' | 'queryFn'
+  >
 ) => {
   return useQuery({
     queryKey: QUERY_KEYS.TASKS(params),
@@ -105,7 +136,15 @@ export const useTasks = (
  * 系统统计查询
  */
 export const useStats = (
-  options?: UseQueryOptions<any, Error>
+  options?: Omit<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof ApiService.getStats>>,
+      Error,
+      Awaited<ReturnType<typeof ApiService.getStats>>,
+      typeof QUERY_KEYS.STATS
+    >,
+    'queryKey' | 'queryFn'
+  >
 ) => {
   return useQuery({
     queryKey: QUERY_KEYS.STATS,
@@ -203,7 +242,7 @@ export const useTaskPolling = (
   const { data: progress, error, isLoading } = useTaskProgress(taskId);
 
   // 使用 useEffect 来处理状态变化
-  React.useEffect(() => {
+  useEffect(() => {
     if (progress?.status === 'completed') {
       // 任务完成，获取结果
       ApiService.getResult(taskId)
@@ -217,9 +256,9 @@ export const useTaskPolling = (
     } else if (progress?.status === 'failed') {
       onError?.(new Error(progress.stage || '处理失败'));
     }
-  }, [progress?.status, taskId, queryClient, onComplete, onError]);
+  }, [progress?.stage, progress?.status, taskId, queryClient, onComplete, onError]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (error) {
       onError?.(error);
     }
@@ -231,7 +270,11 @@ export const useTaskPolling = (
     isLoading,
     isCompleted: progress?.status === 'completed',
     isFailed: progress?.status === 'failed',
-    isProcessing: progress?.status === 'processing',
+    isProcessing: Boolean(
+      progress &&
+      progress.status !== 'completed' &&
+      progress.status !== 'failed'
+    ),
   };
 };
 
@@ -249,7 +292,9 @@ export const usePrefetchQueries = () => {
     });
   };
 
-  const prefetchTasks = (params?: any) => {
+  const prefetchTasks = (
+    params?: TaskListParams
+  ) => {
     queryClient.prefetchQuery({
       queryKey: QUERY_KEYS.TASKS(params),
       queryFn: () => ApiService.getTasks(params),

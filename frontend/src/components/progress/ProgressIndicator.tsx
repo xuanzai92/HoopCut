@@ -1,19 +1,14 @@
-/**
- * 进度指示器组件
- */
 import React from 'react';
-import { Steps, Progress, Card, Typography, Space } from 'antd';
-import { 
-  UploadOutlined, 
-  EyeOutlined, 
-  SearchOutlined, 
-  VideoCameraOutlined, 
-  CheckCircleOutlined,
-  LoadingOutlined 
-} from '@ant-design/icons';
+import { Card, Chip, ProgressBar } from '@heroui/react';
+import {
+  CircleCheckBig,
+  FolderCog,
+  Radar,
+  Search,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
 import type { ProcessingStage, TaskStatus } from '@/types';
-
-const { Text, Title } = Typography;
 
 interface ProgressIndicatorProps {
   status: TaskStatus;
@@ -26,44 +21,24 @@ interface ProgressIndicatorProps {
   className?: string;
 }
 
-// 阶段配置
-const stageConfig = {
-  uploading: {
-    title: '上传视频',
-    icon: <UploadOutlined />,
-    description: '正在上传视频文件到服务器',
-    color: '#1890ff',
-  },
-  analyzing: {
-    title: '分析视频',
-    icon: <EyeOutlined />,
-    description: '正在分析视频内容和结构',
-    color: '#722ed1',
-  },
-  detecting: {
-    title: '动作检测',
-    icon: <SearchOutlined />,
-    description: '正在识别篮球动作和精彩瞬间',
-    color: '#fa8c16',
-  },
-  generating: {
-    title: '生成高光',
-    icon: <VideoCameraOutlined />,
-    description: '正在生成高光视频片段',
-    color: '#52c41a',
-  },
-  finalizing: {
-    title: '最终处理',
-    icon: <CheckCircleOutlined />,
-    description: '最终处理完成',
-    color: '#52c41a',
-  },
-  completed: {
-    title: '处理完成',
-    icon: <CheckCircleOutlined />,
-    description: '视频处理已完成',
-    color: '#52c41a',
-  },
+const stages: Array<{
+  key: ProcessingStage;
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}> = [
+  { key: 'uploading', title: '准备任务', description: '校验参数并初始化本地处理流程。', icon: FolderCog },
+  { key: 'analyzing', title: '分析画面', description: '逐帧分析视频内容和目标球员出镜位置。', icon: Radar },
+  { key: 'detecting', title: '检测投篮', description: '识别出手、轨迹和进球结果。', icon: Search },
+  { key: 'generating', title: '剪辑高光', description: '拼接属于你的进球和助攻镜头。', icon: Sparkles },
+  { key: 'finalizing', title: '整理结果', description: '写入统计信息并导出最终文件。', icon: WandSparkles },
+  { key: 'completed', title: '处理完成', description: '结果已经可查看或下载。', icon: CircleCheckBig },
+];
+
+const formatEstimatedTime = (seconds: number) => {
+  if (seconds < 60) return `约 ${Math.ceil(seconds)} 秒`;
+  if (seconds < 3600) return `约 ${Math.ceil(seconds / 60)} 分钟`;
+  return `约 ${Math.ceil(seconds / 3600)} 小时`;
 };
 
 export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
@@ -76,143 +51,96 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   estimatedTime,
   className = '',
 }) => {
-  // 获取当前阶段索引
-  const getCurrentStepIndex = () => {
-    const stages: ProcessingStage[] = ['uploading', 'analyzing', 'detecting', 'generating', 'finalizing', 'completed'];
-    return stages.indexOf(stage);
-  };
-
-  // 生成步骤项
-  const getStepsItems = () => {
-    const stages: ProcessingStage[] = ['uploading', 'analyzing', 'detecting', 'generating', 'finalizing', 'completed'];
-    const currentIndex = getCurrentStepIndex();
-
-    return stages.map((stageKey, index) => {
-      const config = stageConfig[stageKey];
-      let stepStatus: 'wait' | 'process' | 'finish' | 'error' = 'wait';
-
-      if (status === 'failed') {
-        stepStatus = index <= currentIndex ? 'error' : 'wait';
-      } else if (index < currentIndex) {
-        stepStatus = 'finish';
-      } else if (index === currentIndex) {
-        stepStatus = status === 'completed' ? 'finish' : 'process';
-      }
-
-      return {
-        title: config.title,
-        description: config.description,
-        icon: config.icon,
-        status: stepStatus,
-      };
-    });
-  };
-
-  // 格式化剩余时间
-  const formatEstimatedTime = (seconds: number) => {
-    if (seconds < 60) {
-      return `约 ${Math.ceil(seconds)} 秒`;
-    } else if (seconds < 3600) {
-      return `约 ${Math.ceil(seconds / 60)} 分钟`;
-    } else {
-      return `约 ${Math.ceil(seconds / 3600)} 小时`;
-    }
-  };
-
-  // 获取进度条状态
-  const getProgressStatus = () => {
-    if (status === 'failed') return 'exception';
-    if (status === 'completed') return 'success';
-    return 'active';
-  };
-
-  // 获取进度条颜色
-  const getProgressColor = () => {
-    if (status === 'failed') return '#ff4d4f';
-    if (status === 'completed') return '#52c41a';
-    return stageConfig[stage]?.color || '#1890ff';
-  };
+  const currentIndex = Math.max(
+    stages.findIndex((item) => item.key === stage),
+    0,
+  );
 
   return (
-    <div className={`progress-indicator ${className}`}>
-      {/* 整体进度 */}
-      <Card className="mb-6">
-        <div className="text-center mb-4">
-          <Title level={3} className="!mb-2">
-            {status === 'failed' ? '处理失败' : 
-             status === 'completed' ? '处理完成' : 
-             '正在处理视频'}
-          </Title>
-          <Text type="secondary" className="text-lg">
-            {message || stageConfig[stage]?.description}
-          </Text>
-        </div>
+    <div className={`space-y-6 ${className}`}>
+      <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Chip variant="soft" color={status === 'failed' ? 'danger' : status === 'completed' ? 'success' : 'warning'}>
+              {status === 'failed' ? '处理失败' : status === 'completed' ? '处理完成' : '处理中'}
+            </Chip>
+            <h2 className="text-3xl font-semibold tracking-tight text-slate-950">
+              {stages[currentIndex]?.title ?? '处理中'}
+            </h2>
+            <p className="max-w-3xl text-sm leading-6 text-slate-500">
+              {message || stages[currentIndex]?.description}
+            </p>
+          </div>
 
-        {/* 圆形进度条 */}
-        <div className="flex justify-center mb-6">
-          <Progress
-            type="circle"
-            percent={Math.round(progress)}
-            status={getProgressStatus()}
-            strokeColor={getProgressColor()}
-            size={120}
-            strokeWidth={8}
-            format={(percent) => (
-              <div className="text-center">
-                <div className="text-2xl font-bold">{percent}%</div>
-                {status === 'processing' && (
-                  <div className="text-xs text-gray-500 mt-1">
-                    {stageConfig[stage]?.title}
-                  </div>
-                )}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>整体进度</span>
+                <span className="font-semibold text-slate-900">{Math.round(progress)}%</span>
               </div>
-            )}
-          />
-        </div>
+              <ProgressBar value={Math.max(0, Math.min(progress, 100))} color={status === 'failed' ? 'danger' : status === 'completed' ? 'success' : 'warning'} />
+              {currentStep ? (
+                <div className="rounded-2xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-sm text-slate-600">
+                  {currentStep}
+                </div>
+              ) : null}
+            </div>
 
-        {/* 详细信息 */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-          <div>
-            <Text type="secondary" className="block text-sm">当前阶段</Text>
-            <Text className="font-medium">{stageConfig[stage]?.title}</Text>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-slate-400">阶段</div>
+                <div className="mt-2 text-lg font-semibold text-slate-900">{currentIndex + 1}{totalSteps ? ` / ${totalSteps}` : ''}</div>
+              </div>
+              {estimatedTime && estimatedTime > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-400">预计剩余</div>
+                  <div className="mt-2 text-lg font-semibold text-slate-900">{formatEstimatedTime(estimatedTime)}</div>
+                </div>
+              ) : null}
+            </div>
           </div>
-          {totalSteps && (
-            <div>
-              <Text type="secondary" className="block text-sm">处理步骤</Text>
-              <Text className="font-medium">
-                {getCurrentStepIndex() + 1} / {totalSteps}
-              </Text>
-            </div>
-          )}
-          {estimatedTime && estimatedTime > 0 && (
-            <div>
-              <Text type="secondary" className="block text-sm">预计剩余</Text>
-              <Text className="font-medium">{formatEstimatedTime(estimatedTime)}</Text>
-            </div>
-          )}
         </div>
       </Card>
 
-      {/* 步骤指示器 */}
-      <Card title="处理流程">
-        <Steps
-          current={getCurrentStepIndex()}
-          status={status === 'failed' ? 'error' : undefined}
-          items={getStepsItems()}
-          direction="vertical"
-          size="small"
-        />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {stages.map((item, index) => {
+          const Icon = item.icon;
+          const active = index === currentIndex;
+          const done = index < currentIndex || status === 'completed';
+          const failed = status === 'failed' && index === currentIndex;
 
-        {/* 当前步骤详情 */}
-        {currentStep && (
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <Space>
-              <LoadingOutlined className="text-blue-500" />
-              <Text className="text-blue-700">{currentStep}</Text>
-            </Space>
-          </div>
-        )}
-      </Card>
+          return (
+            <Card
+              key={item.key}
+              className={`border p-5 shadow-[0_16px_50px_rgba(15,23,42,0.06)] transition ${
+                active
+                  ? 'border-orange-200 bg-orange-50/85'
+                  : done
+                    ? 'border-emerald-200 bg-emerald-50/70'
+                    : failed
+                      ? 'border-rose-200 bg-rose-50/80'
+                      : 'border-white/40 bg-white/76'
+              }`}
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white">
+                    <Icon size={18} />
+                  </div>
+                  <Chip
+                    variant="soft"
+                    color={failed ? 'danger' : done ? 'success' : active ? 'warning' : 'default'}
+                  >
+                    {failed ? '异常' : done ? '完成' : active ? '当前' : '待处理'}
+                  </Chip>
+                </div>
+                <div className="text-lg font-semibold text-slate-900">{item.title}</div>
+                <p className="text-sm leading-6 text-slate-500">{item.description}</p>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 };

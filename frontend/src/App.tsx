@@ -1,9 +1,7 @@
-import React from 'react';
+import { Suspense, lazy } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { ConfigProvider, message, theme } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
+import { Toast } from '@heroui/react';
 import { router } from '@/router';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import './index.css';
@@ -20,20 +18,34 @@ const queryClient = new QueryClient({
     mutations: {
       onError: (error) => {
         console.error('Mutation error:', error);
-        message.error(error instanceof Error ? error.message : '操作失败');
+        Toast.toast.danger(error instanceof Error ? error.message : '请稍后重试');
       },
     },
   },
 });
 
+const showQueryDevtools =
+  import.meta.env.DEV && import.meta.env.VITE_SHOW_QUERY_DEVTOOLS === 'true';
+
+const QueryDevtools = showQueryDevtools
+  ? lazy(() =>
+      import('@tanstack/react-query-devtools').then((module) => ({
+        default: module.ReactQueryDevtools,
+      })),
+    )
+  : null;
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ConfigProvider locale={zhCN} theme={{ algorithm: theme.defaultAlgorithm, token: { colorPrimary: '#8AA29E', colorSuccess: '#7FB77E', colorBgBase: '#F6F5F2', colorTextBase: '#3E4A59', colorBorder: '#D8DAD3' } }}>
-          <RouterProvider router={router} />
-        </ConfigProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
+        <RouterProvider router={router} />
+        <Toast.Provider placement="top" />
+        {QueryDevtools ? (
+          <Suspense fallback={null}>
+            <QueryDevtools initialIsOpen={false} />
+          </Suspense>
+        ) : null}
       </QueryClientProvider>
     </ErrorBoundary>
   );

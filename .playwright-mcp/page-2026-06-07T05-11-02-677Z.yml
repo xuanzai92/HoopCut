@@ -1,0 +1,55 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e8]:
+        - heading "HoopCut" [level=1] [ref=e10]
+        - generic [ref=e11]: 上传比赛视频，先框选你自己，再生成个人进球集锦
+      - generic [ref=e13]:
+        - button "inbox 点击或拖拽上传篮球视频 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV 格式 文件大小限制：1MB - 2GB • 自动检测投篮动作 • 生成精彩高光 • 支持多种格式" [ref=e19] [cursor=pointer]:
+          - generic [ref=e21]:
+            - paragraph [ref=e22]:
+              - img "inbox" [ref=e23]:
+                - img [ref=e24]
+            - paragraph [ref=e26]: 点击或拖拽上传篮球视频
+            - paragraph [ref=e27]:
+              - text: 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV 格式
+              - text: 文件大小限制：1MB - 2GB
+            - generic [ref=e28]:
+              - generic [ref=e29]: • 自动检测投篮动作
+              - generic [ref=e30]: • 生成精彩高光
+              - generic [ref=e31]: • 支持多种格式
+        - generic [ref=e32]:
+          - generic [ref=e34]:
+            - generic [ref=e36]:
+              - img "setting" [ref=e37]:
+                - img [ref=e38]
+              - generic [ref=e40]: 剪辑参数设置
+            - button "重置默认" [ref=e42]
+          - generic [ref=e45]:
+            - generic [ref=e47]:
+              - generic [ref=e50]:
+                - generic [ref=e51]: 进球前保留时间
+                - img "question-circle" [ref=e52]:
+                  - img [ref=e53]
+              - generic [ref=e59]:
+                - slider [ref=e64] [cursor=pointer]
+                - generic [ref=e65]: 3.0s
+            - generic [ref=e67]:
+              - generic [ref=e70]:
+                - generic [ref=e71]: 进球后保留时间
+                - img "question-circle" [ref=e72]:
+                  - img [ref=e73]
+              - generic [ref=e79]:
+                - slider [ref=e83] [cursor=pointer]
+                - generic [ref=e84]: 1.0s
+        - generic [ref=e87]:
+          - button "rocket 开始生成个人集锦" [disabled] [ref=e89]:
+            - generic:
+              - img "rocket":
+                - img
+            - generic: 开始生成个人集锦
+          - generic [ref=e91]: 当前最小版本会先记录你的首帧选区，并把这份目标数据提交给后端，后续再接人物跟踪和投篮归因。
+  - generic [ref=e92]:
+    - img [ref=e94]
+    - button "Open Tanstack query devtools" [ref=e142] [cursor=pointer]:
+      - img [ref=e143]

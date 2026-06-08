@@ -49,7 +49,7 @@ export const formatTimestamp = (timestamp: string | Date, format: 'full' | 'date
         minute: '2-digit' 
       });
     
-    case 'relative':
+    case 'relative': {
       const seconds = Math.floor(diff / 1000);
       const minutes = Math.floor(seconds / 60);
       const hours = Math.floor(minutes / 60);
@@ -60,6 +60,7 @@ export const formatTimestamp = (timestamp: string | Date, format: 'full' | 'date
       if (minutes > 0) return `${minutes}分钟前`;
       if (seconds > 0) return `${seconds}秒前`;
       return '刚刚';
+    }
     
     case 'full':
     default:

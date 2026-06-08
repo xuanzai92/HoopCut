@@ -1,0 +1,81 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e8]:
+        - heading "HoopCut" [level=1] [ref=e10]
+        - generic [ref=e11]: 上传比赛视频，先框选你自己，再生成个人进球集锦
+      - generic [ref=e13]:
+        - generic [ref=e18]:
+          - img "video-camera" [ref=e23]:
+            - img [ref=e24]
+          - generic [ref=e27]:
+            - generic [ref=e28]:
+              - heading "run-demo.mp4" [level=4] [ref=e29]
+              - generic [ref=e30]:
+                - generic [ref=e31]:
+                  - generic [ref=e32]: "文件大小:"
+                  - generic [ref=e33]: 1.58 MB
+                - generic [ref=e34]:
+                  - generic [ref=e35]: "视频时长:"
+                  - generic [ref=e36]: 00:15
+                - generic [ref=e37]:
+                  - generic [ref=e38]: "文件格式:"
+                  - generic [ref=e39]: mp4
+            - button "delete 移除" [ref=e41] [cursor=pointer]:
+              - img "delete" [ref=e43]:
+                - img [ref=e44]
+              - generic [ref=e46]: 移除
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - generic [ref=e52]:
+                - img "user" [ref=e54]:
+                  - img [ref=e55]
+                - strong [ref=e59]: 框选你自己
+              - generic [ref=e60]: 在视频首帧中拖拽框选你的完整身体区域。后续人物跟踪会以这个选区作为初始目标。
+            - button "delete 清除选区" [disabled] [ref=e61]:
+              - generic:
+                - img "delete":
+                  - img
+              - generic: 清除选区
+          - alert [ref=e62]:
+            - img "info-circle" [ref=e63]:
+              - img [ref=e64]
+            - generic [ref=e67]: 建议框住头到脚，并尽量包含完整球衣区域。
+          - img "视频首帧" [ref=e70]
+          - generic [ref=e71]: 尚未选择人物区域
+        - generic [ref=e72]:
+          - generic [ref=e74]:
+            - generic [ref=e76]:
+              - img "setting" [ref=e77]:
+                - img [ref=e78]
+              - generic [ref=e80]: 剪辑参数设置
+            - button "重置默认" [ref=e82]
+          - generic [ref=e85]:
+            - generic [ref=e87]:
+              - generic [ref=e90]:
+                - generic [ref=e91]: 进球前保留时间
+                - img "question-circle" [ref=e92]:
+                  - img [ref=e93]
+              - generic [ref=e99]:
+                - slider [ref=e104] [cursor=pointer]
+                - generic [ref=e105]: 3.0s
+            - generic [ref=e107]:
+              - generic [ref=e110]:
+                - generic [ref=e111]: 进球后保留时间
+                - img "question-circle" [ref=e112]:
+                  - img [ref=e113]
+              - generic [ref=e119]:
+                - slider [ref=e123] [cursor=pointer]
+                - generic [ref=e124]: 1.0s
+        - generic [ref=e127]:
+          - button "rocket 开始生成个人集锦" [disabled] [ref=e129]:
+            - generic:
+              - img "rocket":
+                - img
+            - generic: 开始生成个人集锦
+          - generic [ref=e131]: 当前最小版本已经支持首帧框选、目标跟踪和基础进球归因，只会为你导出归因到目标球员的进球镜头。
+  - generic [ref=e132]:
+    - img [ref=e134]
+    - button "Open Tanstack query devtools" [ref=e182] [cursor=pointer]:
+      - img [ref=e183]

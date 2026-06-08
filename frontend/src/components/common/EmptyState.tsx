@@ -3,14 +3,8 @@
  * 用于显示各种空状态和占位内容
  */
 import React from 'react';
-import { Empty, Button } from 'antd';
-import { 
-  FileOutlined, 
-  VideoCameraOutlined, 
-  HistoryOutlined,
-  InboxOutlined,
-  SearchOutlined 
-} from '@ant-design/icons';
+import { Button, Card } from '@heroui/react';
+import { FileX, History, Inbox, Search, Video } from 'lucide-react';
 
 interface EmptyStateProps {
   type?: 'default' | 'video' | 'history' | 'search' | 'upload';
@@ -35,7 +29,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
     switch (type) {
       case 'video':
         return {
-          image: <VideoCameraOutlined className="text-6xl text-gray-300" />,
+          icon: <Video size={36} className="text-slate-400" />,
           title: title || '暂无视频',
           description: description || '还没有上传任何视频文件',
           actionText: actionText || '上传视频',
@@ -43,7 +37,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
 
       case 'history':
         return {
-          image: <HistoryOutlined className="text-6xl text-gray-300" />,
+          icon: <History size={36} className="text-slate-400" />,
           title: title || '暂无历史记录',
           description: description || '还没有处理过任何视频',
           actionText: actionText || '开始处理',
@@ -51,7 +45,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
 
       case 'search':
         return {
-          image: <SearchOutlined className="text-6xl text-gray-300" />,
+          icon: <Search size={36} className="text-slate-400" />,
           title: title || '未找到相关内容',
           description: description || '请尝试调整搜索条件',
           actionText: actionText || '重新搜索',
@@ -59,7 +53,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
 
       case 'upload':
         return {
-          image: <InboxOutlined className="text-6xl text-gray-300" />,
+          icon: <Inbox size={36} className="text-slate-400" />,
           title: title || '拖拽文件到此处',
           description: description || '或点击选择文件上传',
           actionText: actionText || '选择文件',
@@ -68,7 +62,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       case 'default':
       default:
         return {
-          image: <FileOutlined className="text-6xl text-gray-300" />,
+          icon: <FileX size={36} className="text-slate-400" />,
           title: title || '暂无数据',
           description: description || '当前没有可显示的内容',
           actionText: actionText || '刷新',
@@ -80,25 +74,22 @@ const EmptyState: React.FC<EmptyStateProps> = ({
 
   return (
     <div className={`flex items-center justify-center p-8 ${className}`}>
-      <Empty
-        image={image || config.image}
-        description={
-          <div className="text-center">
-            <div className="text-lg font-medium text-gray-600 mb-2">
-              {config.title}
-            </div>
-            <div className="text-sm text-gray-400">
-              {config.description}
-            </div>
+      <Card className="w-full max-w-md border border-white/40 bg-white/82 p-8 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+            {image || config.icon}
           </div>
-        }
-      >
-        {onAction && (
-          <Button type="primary" onClick={onAction}>
-            {config.actionText}
-          </Button>
-        )}
-      </Empty>
+          <div className="mt-5 text-lg font-medium text-slate-700">{config.title}</div>
+          <div className="mt-2 text-sm leading-6 text-slate-400">{config.description}</div>
+          {onAction ? (
+            <div className="mt-5">
+              <Button variant="primary" onClick={onAction}>
+                {config.actionText}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </Card>
     </div>
   );
 };

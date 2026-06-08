@@ -3,8 +3,8 @@
  * 用于显示各种错误状态和提示信息
  */
 import React from 'react';
-import { Alert, Button, Space } from 'antd';
-import { ExclamationCircleOutlined, ReloadOutlined, HomeOutlined } from '@ant-design/icons';
+import { Alert, Button } from '@heroui/react';
+import { Home, RefreshCcw, TriangleAlert } from 'lucide-react';
 
 interface ErrorAlertProps {
   title?: string;
@@ -33,18 +33,21 @@ const ErrorAlert: React.FC<ErrorAlertProps> = ({
   homeText = '返回首页',
   className = '',
 }) => {
-  const actions = [];
+  const status = type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'accent';
+  const actions: React.ReactNode[] = [];
 
   if (onRetry) {
     actions.push(
       <Button
         key="retry"
-        size="small"
-        type={type === 'error' ? 'primary' : 'default'}
-        icon={<ReloadOutlined />}
+        size="sm"
+        variant={type === 'error' ? 'danger' : 'secondary'}
         onClick={onRetry}
       >
-        {retryText}
+        <span className="inline-flex items-center gap-2">
+          <RefreshCcw size={14} />
+          {retryText}
+        </span>
       </Button>
     );
   }
@@ -53,26 +56,37 @@ const ErrorAlert: React.FC<ErrorAlertProps> = ({
     actions.push(
       <Button
         key="home"
-        size="small"
-        icon={<HomeOutlined />}
+        size="sm"
+        variant="ghost"
         onClick={onGoHome}
       >
-        {homeText}
+        <span className="inline-flex items-center gap-2">
+          <Home size={14} />
+          {homeText}
+        </span>
       </Button>
     );
   }
 
   return (
-    <Alert
-      message={title}
-      description={message}
-      type={type}
-      showIcon={showIcon}
-      closable={closable}
-      onClose={onClose}
-      action={actions.length > 0 ? <Space>{actions}</Space> : undefined}
-      className={`${className}`}
-    />
+    <Alert status={status} className={className}>
+      {showIcon ? <TriangleAlert size={18} className="shrink-0" /> : null}
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="font-medium text-current">{title}</div>
+        <div className="text-sm text-current/80">{message}</div>
+        {actions.length > 0 ? <div className="flex flex-wrap gap-2 pt-1">{actions}</div> : null}
+      </div>
+      {closable ? (
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-2 text-current/60 transition hover:text-current"
+          aria-label="关闭错误提示"
+        >
+          ×
+        </button>
+      ) : null}
+    </Alert>
   );
 };
 

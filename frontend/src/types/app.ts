@@ -1,4 +1,10 @@
-import type { TaskStatus, ProcessingStage, DetectionStats, ProcessingResult } from './api';
+import type {
+  TaskStatus,
+  DetectionStats,
+  ProcessingResult,
+  PlayerSelectionBox,
+  SelectionFrame,
+} from './api';
 
 // 应用主题类型
 export type Theme = 'light' | 'dark';
@@ -14,6 +20,8 @@ export interface VideoFile {
   size: number;
   type: string;
   name: string;
+  selectionFrame?: SelectionFrame;
+  targetPlayerBox?: PlayerSelectionBox | null;
 }
 
 // 处理配置
@@ -26,7 +34,7 @@ export interface ProcessingConfig {
 export interface Task {
   id: string;
   status: TaskStatus;
-  stage: ProcessingStage;
+  stage: string;
   progress: number;
   message: string;
   video_file?: VideoFile;

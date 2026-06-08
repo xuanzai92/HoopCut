@@ -3,8 +3,7 @@
  * 用于显示全屏加载状态
  */
 import React from 'react';
-import { Spin } from 'antd';
-import { LoadingOutlined } from '@ant-design/icons';
+import { Card, Spinner } from '@heroui/react';
 
 interface GlobalLoadingProps {
   loading?: boolean;
@@ -22,17 +21,13 @@ const GlobalLoading: React.FC<GlobalLoadingProps> = ({
   if (!loading) return null;
 
   return (
-    <div className={`fixed inset-0 bg-white bg-opacity-80 backdrop-blur-sm z-50 flex items-center justify-center ${className}`}>
-      <div className="text-center">
-        <Spin
-          size={size}
-          indicator={<LoadingOutlined style={{ fontSize: size === 'large' ? 48 : size === 'default' ? 24 : 16 }} spin />}
-          tip={tip}
-        />
-        <div className="mt-4 text-gray-600 text-sm">
-          {tip}
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-white/72 backdrop-blur-sm ${className}`}>
+      <Card className="border border-white/40 bg-white/82 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
+        <div className="text-center">
+          <Spinner size={size === 'large' ? 'lg' : size === 'small' ? 'sm' : 'md'} />
+          <div className="mt-4 text-sm text-slate-600">{tip}</div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

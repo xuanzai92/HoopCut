@@ -2,9 +2,21 @@
  * 应用常量定义
  */
 
+const normalizeBaseUrl = (value?: string): string => {
+  if (!value) {
+    return '';
+  }
+
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+};
+
+const ENV_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const ENV_SOCKET_URL = normalizeBaseUrl(import.meta.env.VITE_SOCKET_URL);
+
 // API 配置
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+  BASE_URL: ENV_API_BASE_URL,
+  SOCKET_URL: ENV_SOCKET_URL || ENV_API_BASE_URL,
   TIMEOUT: 30000, // 30秒
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // 1秒
@@ -39,22 +51,22 @@ export const PROCESSING_STAGES = {
 
 // 阶段显示名称
 export const STAGE_NAMES = {
-  [PROCESSING_STAGES.UPLOADING]: '上传视频',
-  [PROCESSING_STAGES.ANALYZING]: '分析视频',
+  [PROCESSING_STAGES.UPLOADING]: '准备任务',
+  [PROCESSING_STAGES.ANALYZING]: '分析画面',
   [PROCESSING_STAGES.DETECTING]: '检测投篮',
-  [PROCESSING_STAGES.GENERATING]: '生成高光',
-  [PROCESSING_STAGES.FINALIZING]: '完成处理',
+  [PROCESSING_STAGES.GENERATING]: '剪辑高光',
+  [PROCESSING_STAGES.FINALIZING]: '整理结果',
   [PROCESSING_STAGES.COMPLETED]: '处理完成',
 } as const;
 
 // 阶段描述
 export const STAGE_DESCRIPTIONS = {
-  [PROCESSING_STAGES.UPLOADING]: '正在上传您的篮球视频...',
-  [PROCESSING_STAGES.ANALYZING]: '正在分析视频内容和结构...',
-  [PROCESSING_STAGES.DETECTING]: '使用AI模型检测投篮动作...',
-  [PROCESSING_STAGES.GENERATING]: '正在生成精彩高光片段...',
-  [PROCESSING_STAGES.FINALIZING]: '正在完成最后的处理步骤...',
-  [PROCESSING_STAGES.COMPLETED]: '您的高光视频已经准备就绪！',
+  [PROCESSING_STAGES.UPLOADING]: '正在校验任务参数并准备进入本地处理流程...',
+  [PROCESSING_STAGES.ANALYZING]: '正在逐帧分析视频内容...',
+  [PROCESSING_STAGES.DETECTING]: '正在识别篮球轨迹和投篮时刻...',
+  [PROCESSING_STAGES.GENERATING]: '正在剪辑归因到你的高光镜头...',
+  [PROCESSING_STAGES.FINALIZING]: '正在写入统计结果并导出文件...',
+  [PROCESSING_STAGES.COMPLETED]: '本地处理完成，可以查看结果或下载视频。',
 } as const;
 
 // 默认处理配置

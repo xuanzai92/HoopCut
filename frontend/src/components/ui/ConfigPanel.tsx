@@ -2,8 +2,8 @@
  * 参数设置面板组件
  */
 import React from 'react';
-import { Card, Form, Tooltip, Slider } from 'antd';
-import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Card, Chip } from '@heroui/react';
+import { RotateCcw, Settings2 } from 'lucide-react';
 import type { ProcessingConfig } from '@/types';
 
 interface ConfigPanelProps {
@@ -19,9 +19,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   disabled = false,
   className = '',
 }) => {
-  const [form] = Form.useForm();
-
-  // 处理配置变更
   const handleConfigChange = (field: keyof ProcessingConfig, value: number) => {
     const newConfig = { ...config, [field]: value };
     onChange(newConfig);
@@ -34,90 +31,90 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       afterSeconds: 1,
     };
     onChange(defaultConfig);
-    form.setFieldsValue(defaultConfig);
   };
 
   return (
-    <Card
-      title={
-        <div className="flex items-center space-x-2">
-          <SettingOutlined className="text-primary" />
-          <span>剪辑参数设置</span>
+    <Card className={`border border-white/12 bg-white/80 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur ${className}`}>
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-slate-900">
+            <Settings2 size={18} className="text-orange-500" />
+            <span className="text-base font-semibold">剪辑参数</span>
+          </div>
+          <p className="text-sm text-slate-500">
+            控制每个进球片段前后的保留时间，决定最后成片的节奏感。
+          </p>
         </div>
-      }
-      extra={
-        <button
+        <Button
           onClick={resetToDefaults}
-          disabled={disabled}
-          className="text-sm text-primary hover:text-primary-dark disabled:text-gray-400"
+          isDisabled={disabled}
+          size="sm"
+          variant="ghost"
         >
-          重置默认
-        </button>
-      }
-      className={`config-panel ${className}`}
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        initialValues={config}
-        disabled={disabled}
-      >
-        <div className="grid grid-cols-1 gap-4">
-          <Form.Item
-            label={
-              <div className="flex items-center space-x-1">
-                <span>进球前保留时间</span>
-                <Tooltip title="保留进球发生前几秒的画面">
-                  <QuestionCircleOutlined className="text-gray-400" />
-                </Tooltip>
-              </div>
-            }
-          >
-            <div className="flex items-center space-x-3">
-              <div className="flex-1">
-                <Slider
-                  min={1}
-                  max={15}
-                  step={0.5}
-                  value={config.beforeSeconds}
-                  tooltip={{ formatter: (v) => `${(v ?? 0).toFixed(1)}秒` }}
-                  onChange={(value) => handleConfigChange('beforeSeconds', Number(value))}
-                />
-              </div>
-              <div className="px-3 py-1 rounded bg-[#F0EFEA] border border-[#D8DAD3] text-[#8AA29E]">
-                {(config.beforeSeconds || 0).toFixed(1)}s
-              </div>
-            </div>
-          </Form.Item>
+          <span className="inline-flex items-center gap-2">
+            <RotateCcw size={14} />
+            重置默认
+          </span>
+        </Button>
+      </div>
 
-          <Form.Item
-            label={
-              <div className="flex items-center space-x-1">
-                <span>进球后保留时间</span>
-                <Tooltip title="保留进球发生后几秒的画面">
-                  <QuestionCircleOutlined className="text-gray-400" />
-                </Tooltip>
-              </div>
-            }
-          >
-            <div className="flex items-center space-x-3">
-              <div className="flex-1">
-                <Slider
-                  min={1}
-                  max={10}
-                  step={0.5}
-                  value={config.afterSeconds}
-                  tooltip={{ formatter: (v) => `${(v ?? 0).toFixed(1)}秒` }}
-                  onChange={(value) => handleConfigChange('afterSeconds', Number(value))}
-                />
-              </div>
-              <div className="px-3 py-1 rounded bg-[#F0EFEA] border border-[#D8DAD3] text-[#7FB77E]">
-                {(config.afterSeconds || 0).toFixed(1)}s
-              </div>
+      <div className="space-y-6 px-6 py-6">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">进球前保留时间</p>
+              <p className="text-sm text-slate-500">保留进攻发起、跑位和出手前的关键片段。</p>
             </div>
-          </Form.Item>
+            <Chip color="warning" variant="soft">
+              {config.beforeSeconds.toFixed(1)}s
+            </Chip>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={15}
+            step={0.5}
+            value={config.beforeSeconds}
+            disabled={disabled}
+            onChange={(event) => handleConfigChange('beforeSeconds', Number(event.target.value))}
+            className="hero-range"
+          />
+          <div className="flex justify-between text-xs text-slate-400">
+            <span>1s</span>
+            <span>15s</span>
+          </div>
         </div>
-      </Form>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">进球后保留时间</p>
+              <p className="text-sm text-slate-500">保留庆祝、回防和镜头收尾，避免成片太硬切。</p>
+            </div>
+            <Chip color="success" variant="soft">
+              {config.afterSeconds.toFixed(1)}s
+            </Chip>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            step={0.5}
+            value={config.afterSeconds}
+            disabled={disabled}
+            onChange={(event) => handleConfigChange('afterSeconds', Number(event.target.value))}
+            className="hero-range"
+          />
+          <div className="flex justify-between text-xs text-slate-400">
+            <span>1s</span>
+            <span>10s</span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4 text-sm text-slate-600">
+          默认配置适合大多数半场和全场比赛素材。如果原视频节奏更快，建议适当缩短前置时间。
+        </div>
+      </div>
     </Card>
   );
 };
