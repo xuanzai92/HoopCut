@@ -27,12 +27,19 @@ logger = logging.getLogger(__name__)
 BACKEND_HOST = os.getenv('BACKEND_HOST', '127.0.0.1')
 BACKEND_PORT = int(os.getenv('BACKEND_PORT', '5050'))
 FRONTEND_PORT = os.getenv('FRONTEND_PORT', '5173')
+BACKEND_DEBUG = os.getenv('BACKEND_DEBUG', '').strip().lower() in {
+    '1',
+    'true',
+    'yes',
+    'on',
+}
 DEBUG_KEEP_ARTIFACTS = os.getenv('DEBUG_KEEP_ARTIFACTS', '').strip().lower() in {
     '1',
     'true',
     'yes',
     'on',
 }
+TASK_RETENTION_SECONDS = int(os.getenv('TASK_RETENTION_SECONDS', str(24 * 60 * 60)))
 
 app = Flask(__name__)
 LOCAL_FRONTEND_ORIGINS = list({
@@ -399,6 +406,7 @@ def process_video():
             'result': None,
             'error': None,
             'created_at': time.time(),
+            'updated_at': time.time(),
             'file_id': file_id,
             'input_path': input_path,
             'before_seconds': before_seconds,
@@ -432,6 +440,7 @@ def update_task_progress(task_id, **kwargs):
     """更新任务进度的辅助函数"""
     if task_id in processing_tasks:
         processing_tasks[task_id].update(kwargs)
+        processing_tasks[task_id]['updated_at'] = time.time()
         logger.info(f"任务 {task_id} 进度更新: {kwargs}")
         
         # 通过WebSocket发送进度更新
@@ -470,7 +479,8 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         # 初始化检测器
         logger.info(f"初始化篮球检测器，模型: {model_path}")
         detector = BasketballShotDetector(model_path=model_path)
-        target_player_box = processing_tasks[task_id].get('target_player_box')
+        task = processing_tasks.get(task_id, {})
+        target_player_box = task.get('target_player_box')
         
         # 进度回调函数
         def progress_callback(current_frame, total_frames):
@@ -483,15 +493,17 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         
         # 检测进球
         logger.info(f"开始检测进球，文件: {input_path}")
-        annotated_filename = f"{task_id}_annotated.mp4"
-        annotated_output_path = os.path.join(app.config['OUTPUT_FOLDER'], annotated_filename)
+        annotated_output_path = None
+        if DEBUG_KEEP_ARTIFACTS:
+            annotated_filename = f"{task_id}_annotated.mp4"
+            annotated_output_path = os.path.join(app.config['OUTPUT_FOLDER'], annotated_filename)
 
         result = detector.detect_shots_with_clips(
             input_path,
             before_seconds=before_seconds,
             after_seconds=after_seconds,
             progress_callback=progress_callback,
-            annotate=True,
+            annotate=DEBUG_KEEP_ARTIFACTS,
             annotated_output_path=annotated_output_path,
             target_player_box=target_player_box,
         )
@@ -584,7 +596,7 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'timestamps': selected_made_shots,
                     'allMadeTimestamps': result['made_shots'],
                     'fileSize': file_size,
-                    'targetPlayerBox': processing_tasks[task_id].get('target_player_box'),
+                    'targetPlayerBox': target_player_box,
                     'tracking': tracking_summary,
                     **debug_result,
                 }
@@ -613,7 +625,7 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'highlightVideo': None,
                     'annotatedVideo': os.path.basename(result['annotated_video']) if result.get('annotated_video') else None,
                     'message': message,
-                    'targetPlayerBox': processing_tasks[task_id].get('target_player_box'),
+                    'targetPlayerBox': target_player_box,
                     'tracking': tracking_summary,
                     'timestamps': selected_made_shots,
                     'allMadeTimestamps': result['made_shots'],
@@ -764,19 +776,20 @@ def health_check():
             'message': f'健康检查失败: {str(e)}'
         }), 500
 
-# 清理过期任务的定时任务
+# 清理已结束任务的定时任务
 def cleanup_old_tasks():
-    """清理超过1小时的旧任务"""
+    """清理保留期已过的已结束任务，运行中的长任务不参与清理。"""
     try:
         current_time = time.time()
         expired_tasks = [
-            task_id for task_id, task in processing_tasks.items()
-            if current_time - task['created_at'] > 3600  # 1小时
+            task_id for task_id, task in list(processing_tasks.items())
+            if task.get('status') in {'completed', 'failed'}
+            and current_time - task.get('updated_at', task.get('created_at', current_time)) > TASK_RETENTION_SECONDS
         ]
         
         for task_id in expired_tasks:
-            del processing_tasks[task_id]
-            logger.info(f"清理过期任务: {task_id}")
+            if processing_tasks.pop(task_id, None) is not None:
+                logger.info(f"清理过期任务: {task_id}")
         
         if expired_tasks:
             logger.info(f"清理了 {len(expired_tasks)} 个过期任务")
@@ -798,8 +811,9 @@ if __name__ == '__main__':
     logger.info(f"Health Check: http://{BACKEND_HOST}:{BACKEND_PORT}/api/health")
     socketio.run(
         app,
-        debug=True,
+        debug=BACKEND_DEBUG,
         host=BACKEND_HOST,
         port=BACKEND_PORT,
         allow_unsafe_werkzeug=True,
+        use_reloader=BACKEND_DEBUG,
     )

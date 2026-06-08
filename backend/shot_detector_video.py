@@ -375,6 +375,14 @@ class BasketballShotDetector:
             annotated_output_path=annotated_output_path,
             target_player_box=target_player_box,
         )
+        effective_annotated_output_path = None
+        if (
+            annotate
+            and annotated_output_path
+            and os.path.exists(annotated_output_path)
+            and os.path.getsize(annotated_output_path) > 0
+        ):
+            effective_annotated_output_path = annotated_output_path
         
         # 筛选出进球
         made_shots = [shot for shot in all_shots if shot['made']]
