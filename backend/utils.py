@@ -178,23 +178,138 @@ def clean_hoop_pos(hoop_pos):
 
 
 # Detects if the ball is below the net - used to detect shot attempts
+def _dedupe_ball_samples(ball_pos):
+    samples_by_frame = {}
+    for sample in ball_pos:
+        frame = int(sample[1])
+        if frame not in samples_by_frame or sample[4] > samples_by_frame[frame][4]:
+            samples_by_frame[frame] = sample
+    return [samples_by_frame[frame] for frame in sorted(samples_by_frame)]
+
+
+def find_recent_up_frame(ball_pos, hoop_pos, lookback_frames: int = 12):
+    if len(ball_pos) < 1 or not hoop_pos:
+        return None
+
+    samples = _dedupe_ball_samples(ball_pos)
+    latest_frame = samples[-1][1]
+    hoop_center, _, hoop_width, hoop_height, _ = hoop_pos[-1]
+    hoop_x, hoop_y = hoop_center
+
+    x1 = hoop_x - 4 * hoop_width
+    x2 = hoop_x + 4 * hoop_width
+    y1 = hoop_y - 2.4 * hoop_height
+    y2 = hoop_y - 0.35 * hoop_height
+
+    for sample in reversed(samples):
+        frame = sample[1]
+        if latest_frame - frame > lookback_frames:
+            break
+
+        sample_x, sample_y = sample[0]
+        if x1 < sample_x < x2 and y1 < sample_y < y2:
+            return int(frame)
+
+    return None
+
+
 def detect_down(ball_pos, hoop_pos):
-    y = hoop_pos[-1][0][1] + 0.5 * hoop_pos[-1][3]
-    if ball_pos[-1][0][1] > y:
-        return True
-    return False
+    return find_recent_down_frame(ball_pos, hoop_pos) is not None
 
 
 # Detects if the ball is around the backboard - used to detect shot attempts
 def detect_up(ball_pos, hoop_pos):
-    x1 = hoop_pos[-1][0][0] - 4 * hoop_pos[-1][2]
-    x2 = hoop_pos[-1][0][0] + 4 * hoop_pos[-1][2]
-    y1 = hoop_pos[-1][0][1] - 2 * hoop_pos[-1][3]
-    y2 = hoop_pos[-1][0][1]
+    return find_recent_up_frame(ball_pos, hoop_pos) is not None
 
-    if x1 < ball_pos[-1][0][0] < x2 and y1 < ball_pos[-1][0][1] < y2 - 0.5 * hoop_pos[-1][3]:
-        return True
-    return False
+
+def find_recent_down_frame(ball_pos, hoop_pos, after_frame=None, lookback_frames: int = 14):
+    if len(ball_pos) < 1 or not hoop_pos:
+        return None
+
+    samples = _dedupe_ball_samples(ball_pos)
+    latest_frame = samples[-1][1]
+    hoop_center, _, hoop_width, hoop_height, _ = hoop_pos[-1]
+    hoop_x, hoop_y = hoop_center
+    min_y = hoop_y + 0.35 * hoop_height
+    max_horizontal_offset = hoop_width * 0.7
+
+    for sample in reversed(samples):
+        frame = sample[1]
+        if latest_frame - frame > lookback_frames:
+            break
+        if after_frame is not None and frame <= after_frame:
+            continue
+
+        sample_x, sample_y = sample[0]
+        if sample_y >= min_y and abs(sample_x - hoop_x) <= max_horizontal_offset:
+            return int(frame)
+
+    return None
+
+
+def find_recent_score_event(ball_pos, hoop_pos):
+    if len(ball_pos) < 3 or not hoop_pos:
+        return None
+
+    hoop_center, _, hoop_width, hoop_height, _ = hoop_pos[-1]
+    hoop_x, hoop_y = hoop_center
+    rim_y = hoop_y - 0.5 * hoop_height
+    samples = _dedupe_ball_samples(ball_pos)
+
+    for index in range(len(samples) - 1):
+        before = samples[index]
+        after = samples[index + 1]
+        before_x, before_y = before[0]
+        after_x, after_y = after[0]
+        frame_gap = after[1] - before[1]
+
+        if frame_gap <= 0 or frame_gap > 12 or before_y >= rim_y or after_y < rim_y:
+            continue
+
+        is_occluded_crossing = frame_gap > 6
+
+        vertical_delta = after_y - before_y
+        if vertical_delta <= max(before[3], after[3]) * 0.2:
+            continue
+
+        interpolation = (rim_y - before_y) / vertical_delta
+        crossing_x = before_x + interpolation * (after_x - before_x)
+        if abs(crossing_x - hoop_x) > hoop_width * 0.38:
+            continue
+
+        if is_occluded_crossing and after_y > hoop_y + hoop_height * 0.2:
+            continue
+
+        upper_samples = [
+            sample for sample in samples[max(index - 4, 0):index + 1]
+            if sample[0][1] < rim_y and abs(sample[0][0] - hoop_x) <= hoop_width * 2.2
+        ]
+        if not upper_samples:
+            continue
+
+        crossed_frame = int(after[1])
+        if is_occluded_crossing:
+            crossed_frame = max(
+                int(before[1]) + 1,
+                int(round(before[1] + frame_gap * interpolation)),
+            )
+        down_window_frames = 12 if not is_occluded_crossing else 18
+        below_samples = [
+            sample for sample in samples[index + 1:]
+            if crossed_frame <= sample[1] <= crossed_frame + down_window_frames
+            and sample[0][1] >= hoop_y + hoop_height * 0.25
+            and abs(sample[0][0] - hoop_x) <= hoop_width * 0.6
+        ]
+        if not below_samples:
+            continue
+
+        return {
+            'up_frame': int(upper_samples[-1][1]),
+            'cross_frame': crossed_frame,
+            'down_frame': int(below_samples[0][1]),
+        }
+
+    return None
 
 
 # def in_hoop_region(ball_pos: Tuple[int, int], hoop_pos: Tuple[int, int], threshold: int = 50) -> bool:
@@ -286,36 +401,7 @@ def check_trajectory_intersection(coeffs: np.ndarray, hoop_pos: Tuple[int, int],
 #     return (has_up and has_down and passed_hoop) or trajectory_match
 
 def score(ball_pos, hoop_pos):
-    x = []
-    y = []
-    rim_height = hoop_pos[-1][0][1] - 0.5 * hoop_pos[-1][3]
-
-    # Get first point above rim and first point below rim
-    for i in reversed(range(len(ball_pos))):
-        if ball_pos[i][0][1] < rim_height:
-            x.append(ball_pos[i][0][0])
-            y.append(ball_pos[i][0][1])
-            if i + 1 < len(ball_pos):
-                x.append(ball_pos[i + 1][0][0])
-                y.append(ball_pos[i + 1][0][1])
-            break
-
-    # Create line from two points
-    if len(x) > 1:
-        m, b = np.polyfit(x, y, 1)
-        predicted_x = ((hoop_pos[-1][0][1] - 0.5 * hoop_pos[-1][3]) - b) / m
-        rim_x1 = hoop_pos[-1][0][0] - 0.4 * hoop_pos[-1][2]
-        rim_x2 = hoop_pos[-1][0][0] + 0.4 * hoop_pos[-1][2]
-
-        # Check if predicted path crosses the rim area (including rebound zone)
-        if rim_x1 < predicted_x < rim_x2:
-            return True
-        # Check if ball enters rebound zone near the hoop
-        hoop_rebound_zone = 10  # Define a buffer zone around the hoop
-        if rim_x1 - hoop_rebound_zone < predicted_x < rim_x2 + hoop_rebound_zone:
-            return True
-
-    return False
+    return find_recent_score_event(ball_pos, hoop_pos) is not None
 
 
 def draw_trajectory(frame: np.ndarray, positions: List[Tuple[int, int]], color: Tuple[int, int, int] = (0, 255, 0)):
@@ -515,6 +601,9 @@ __all__ = [
     'calculate_distance',
     'clean_ball_pos',
     'clean_hoop_pos',
+    'find_recent_up_frame',
+    'find_recent_down_frame',
+    'find_recent_score_event',
     'detect_up',
     'detect_down',
     'in_hoop_region',

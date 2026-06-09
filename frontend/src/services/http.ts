@@ -229,6 +229,26 @@ export class HttpService {
     
     return response.data;
   }
+
+  static async postDownload<D = unknown>(
+    url: string,
+    data: D,
+    filename: string
+  ): Promise<Blob> {
+    const response = await httpClient.post(url, data, {
+      responseType: 'blob',
+    });
+    const blob = new Blob([response.data]);
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+    return blob;
+  }
 }
 
 // 重试机制

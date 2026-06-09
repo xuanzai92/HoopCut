@@ -6,9 +6,9 @@
 ![YOLOv8](https://img.shields.io/badge/YOLOv8-AI%20Detection-green?style=for-the-badge)
 ![Flask](https://img.shields.io/badge/Flask-Backend-red?style=for-the-badge&logo=flask)
 
-**🎯 基于AI的篮球视频自动剪辑系统**
+**🎯 基于AI的篮球个人高光自动剪辑系统**
 
-使用本地 YOLOv8 模型实现篮球进球自动检测和视频集锦生成。视频、模型推理、临时文件和输出结果都保存在本机。
+上传一段完整篮球视频，框选一个目标球员，系统会在本地自动分析整段素材，并导出和这个人相关的进球、助攻与补充片段。视频、模型推理、临时文件和输出结果都保存在本机。
 
 </div>
 
@@ -27,11 +27,19 @@ https://github.com/user-attachments/assets/8723aabc-38b1-4c8e-90a3-13d688a820bf
 
 ## ✨ 核心功能
 
-- 🎯 **AI进球检测**：基于YOLOv8模型的篮球进球自动识别
-- 🎬 **视频集锦生成**：FFmpeg自动剪辑生成精彩进球集锦
-- 📊 **统计分析**：提供投篮统计和命中率分析
-- 🚀 **REST API**：完整的后端API接口服务
-- ⚡ **实时处理**：支持视频上传和实时处理进度反馈
+- 🎯 **单目标球员锁定**：先选截图、再框人，用单球员视角分析整段视频
+- 🏀 **相关回合自动归因**：自动筛出和目标球员相关的进球与助攻
+- ✂️ **片段自动导出**：FFmpeg 自动切出片段并打包成 ZIP，便于直接验收
+- 👀 **补充片段与标注复核**：为减少漏剪，系统会自动保留补充片段和必要的跟踪标注视频
+- ⚡ **本地实时处理**：支持大文件上传、任务进度反馈和原视频复用重跑
+
+## 🎯 典型使用流程
+
+1. 上传一段完整篮球视频
+2. 从候选截图中选一张最早且清晰的目标球员画面
+3. 在该截图里框住目标球员
+4. 启动自动处理
+5. 在结果页直接下载全部相关片段 ZIP，不满意就重新框选并重跑
 
 ## 🛠️ 技术栈
 
@@ -51,7 +59,7 @@ https://github.com/user-attachments/assets/8723aabc-38b1-4c8e-90a3-13d688a820bf
 
 HoopCut 当前按完全本地模式运行：
 
-- 前端地址：`http://127.0.0.1:5173`
+- 前端地址：默认从 `http://127.0.0.1:5173` 起自动选择一个可用本地端口
 - 后端 API：默认 `http://127.0.0.1:5050` 起，会自动选择一个可用本地端口
 - 本地模型：`backend/best.pt`
 - 上传目录：`backend/uploads/`
@@ -67,9 +75,11 @@ HoopCut 当前按完全本地模式运行：
 git clone <repository-url>
 cd HoopCut
 
-# 自动创建 backend/venv、安装依赖，并选择一个可用后端端口
+# 自动创建 backend/venv、安装依赖，并自动选择一组可用的前后端端口
 ./start-local.sh
 ```
+
+脚本会让前端直接连接本次启动出来的后端实例，避免误连到旧的本地进程。
 
 ### 手动启动
 
@@ -89,8 +99,8 @@ cd frontend
 
 npm install
 VITE_PROXY_TARGET=http://127.0.0.1:5050 \
-VITE_API_BASE_URL= \
-VITE_SOCKET_URL= \
+VITE_API_BASE_URL=http://127.0.0.1:5050 \
+VITE_SOCKET_URL=http://127.0.0.1:5050 \
 npm run dev -- --host 127.0.0.1 --port 5173
 
 ```
@@ -172,8 +182,18 @@ Content-Type: application/json
 
 {
   "fileId": "...",
-  "beforeSeconds": 3,
-  "afterSeconds": 1
+  "beforeSeconds": 6,
+  "afterSeconds": 2,
+  "targetPlayerBox": {
+    "x": 420,
+    "y": 180,
+    "width": 96,
+    "height": 220,
+    "frameWidth": 1280,
+    "frameHeight": 720,
+    "selectionTime": 12.4,
+    "selectionFrame": 372
+  }
 }
 ```
 
@@ -181,6 +201,8 @@ Content-Type: application/json
 ```bash
 GET /api/progress/{task_id}
 ```
+
+返回实时处理进度，以及真实的 `createdAt` / `updatedAt` 时间戳。
 
 ### 播放集锦视频
 ```bash
@@ -191,6 +213,29 @@ GET /api/stream/{filename}
 ```bash
 GET /api/download/{filename}
 ```
+
+### 下载所选高光片段
+```bash
+POST /api/download/clips/{task_id}
+Content-Type: application/json
+
+{
+  "filenames": [
+    "{task_id}_clip_001_1234.mp4",
+    "{task_id}_clip_003_5678.mp4"
+  ]
+}
+```
+
+返回包含所选片段的 ZIP 文件。
+
+### 复用原视频重新框选
+```bash
+GET /api/tasks/{task_id}/source
+GET /api/tasks/{task_id}/source/stream
+```
+
+用于在同一段原视频上重新选择目标球员并重跑，无需再次上传。
 
 ## 📄 许可证
 

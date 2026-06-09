@@ -4,6 +4,7 @@ import type {
   ProcessingResult,
   PlayerSelectionBox,
   SelectionFrame,
+  ReusableVideoSource,
 } from './api';
 
 // 应用主题类型
@@ -14,14 +15,21 @@ export type Language = 'zh' | 'en';
 
 // 视频文件信息
 export interface VideoFile {
-  file: File;
+  file?: File;
   preview?: string;
   duration?: number;
   size: number;
   type: string;
   name: string;
   selectionFrame?: SelectionFrame;
+  selectionFrameConfirmed?: boolean;
   targetPlayerBox?: PlayerSelectionBox | null;
+  sourceTaskId?: string;
+  sourceFileId?: string;
+  sourceUrl?: string;
+  reusable?: boolean;
+  reusableSource?: ReusableVideoSource | null;
+  uploadStatus?: 'local' | 'uploading' | 'uploaded' | 'failed';
 }
 
 // 处理配置
@@ -40,8 +48,8 @@ export interface Task {
   video_file?: VideoFile;
   config?: ProcessingConfig;
   result?: TaskResult;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
   estimated_time?: number;
   error_message?: string;
 }

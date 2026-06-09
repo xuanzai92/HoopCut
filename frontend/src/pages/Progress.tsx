@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Chip, EmptyState, Toast } from '@heroui/react';
-import { ArrowLeft, Download, Eye, RefreshCcw } from 'lucide-react';
+import { ArrowLeft, Eye, RefreshCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProgressIndicator } from '@/components/progress/ProgressIndicator';
 import { StatusDisplay } from '@/components/progress/StatusDisplay';
@@ -24,6 +24,7 @@ const resolveProgressStage = (status: string, stageText?: string): ProcessingSta
   if (status === 'detecting') {
     return stageText?.includes('分析') ? 'analyzing' : 'detecting';
   }
+  if (status === 'attributing') return 'attributing';
   if (status === 'generating') return 'generating';
   if (status === 'completed') return 'completed';
   if (status === 'failed') return 'finalizing';
@@ -104,26 +105,17 @@ export const Progress: React.FC = () => {
     }),
   );
 
-  const handleDownloadResult = withErrorHandling(async () => {
-    const filename = progress?.result?.highlightVideo;
-    if (!filename) {
-      throw new Error('当前没有可下载的个人高光视频');
-    }
-
-    const url = ApiService.getDownloadUrl(filename);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `basketball_highlight_${filename}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    Toast.toast.success('已开始下载高光视频');
-  });
-
   const handleRefresh = withErrorHandling(async () => {
     await refetch();
     Toast.toast.success('已刷新任务状态');
   });
+
+  const handleReuseSource = () => {
+    if (!fileId) {
+      return;
+    }
+    navigate(`/?reuseTaskId=${fileId}`);
+  };
 
   const normalizedStatus = useMemo(
     () => (progress ? normalizeTaskStatus(progress.status) : 'processing'),
@@ -211,7 +203,7 @@ export const Progress: React.FC = () => {
                   处理进度
                 </h1>
                 <p className="max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                  当前页面展示本地处理任务的实时状态、阶段进度和结果产出情况。
+                  当前页面只负责展示自动处理是否已经完成。处理结束后，直接去结果页检查已确认的进球、助攻片段；只有怀疑漏剪时，再看高级排错区。
                 </p>
               </div>
             </div>
@@ -231,11 +223,11 @@ export const Progress: React.FC = () => {
                   </span>
                 </Button>
               ) : null}
-              {progress.result?.highlightVideo ? (
-                <Button variant="secondary" onClick={() => void handleDownloadResult()}>
+              {progress.status === 'completed' || progress.status === 'failed' ? (
+                <Button variant="secondary" onClick={handleReuseSource}>
                   <span className="inline-flex items-center gap-2">
-                    <Download size={16} />
-                    下载视频
+                    <RefreshCcw size={16} />
+                    重新框选并重跑
                   </span>
                 </Button>
               ) : null}
@@ -265,13 +257,13 @@ export const Progress: React.FC = () => {
                 progress: progress.progress,
                 message: progress.stage || '',
                 result: progress.result,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
+                created_at: progress.createdAt,
+                updated_at: progress.updatedAt,
                 error_message: progress.error,
               }}
               onRetry={() => void handleRetry()}
               onViewResult={progress.status === 'completed' ? () => navigate(`/result/${fileId}`) : undefined}
-              onDownloadResult={progress.result?.highlightVideo ? () => void handleDownloadResult() : undefined}
+              onReuseSource={progress.status === 'completed' || progress.status === 'failed' ? handleReuseSource : undefined}
               retryLoading={retryLoading}
             />
           </div>

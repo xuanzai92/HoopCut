@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Card, Toast } from '@heroui/react';
-import { Download, Expand, Maximize, Minimize, Pause, PictureInPicture2, Play, Share2, Volume2, VolumeX } from 'lucide-react';
+import { Download, Expand, Maximize, Minimize, Pause, PictureInPicture2, Play, Volume2, VolumeX } from 'lucide-react';
 import { formatDuration } from '@/utils';
 
 interface VideoPlayerProps {
@@ -8,7 +8,6 @@ interface VideoPlayerProps {
   poster?: string;
   title?: string;
   onDownload?: () => void;
-  onShare?: () => void;
   className?: string;
 }
 
@@ -17,7 +16,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   poster,
   title,
   onDownload,
-  onShare,
   className = '',
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -78,6 +76,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    setIsLoading(true);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    setShowControls(true);
+
+    video.pause();
+    video.load();
+  }, [src]);
 
   useEffect(() => {
     if (controlsTimeoutRef.current !== null) {
@@ -249,11 +263,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               {onDownload ? (
                 <Button variant="ghost" onClick={onDownload}>
                   <Download size={16} />
-                </Button>
-              ) : null}
-              {onShare ? (
-                <Button variant="ghost" onClick={onShare}>
-                  <Share2 size={16} />
                 </Button>
               ) : null}
               <Button variant="ghost" onClick={() => void handlePictureInPicture()}>

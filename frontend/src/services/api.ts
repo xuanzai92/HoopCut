@@ -15,6 +15,9 @@ import type {
   ProcessResponse,
   TaskQueryParams,
   DownloadParams,
+  DownloadClipArchiveParams,
+  ReusableVideoSource,
+  SelectionFrame,
 } from '@/types';
 
 interface UploadInitResponse {
@@ -55,8 +58,34 @@ interface StatsResponse {
   error?: string;
 }
 
+interface ReusableSourceResponse extends ReusableVideoSource {
+  success: boolean;
+  error?: string;
+  message?: string;
+}
+
+interface SelectionFrameCandidatesResponse {
+  success: boolean;
+  fileId: string;
+  candidateFrames?: SelectionFrame[];
+  error?: string;
+  message?: string;
+}
+
 const getResponseError = (response: Pick<ApiResponse<unknown>, 'message' | 'error'>, fallback: string): string => {
   return response.message || response.error || fallback;
+};
+
+const buildApiUrl = (path: string): string => {
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+
+  if (!path.startsWith('/')) {
+    return `${API_CONFIG.BASE_URL}/${path}`;
+  }
+
+  return `${API_CONFIG.BASE_URL}${path}`;
 };
 
 export class ApiService {
@@ -163,12 +192,20 @@ export class ApiService {
    * 开始处理视频
    */
   static async processVideo(params: ProcessParams): Promise<ProcessResponse> {
-    const response = await HttpService.post<ProcessResponse & { error?: string }>(API_ENDPOINTS.PROCESS, {
+    const payload: Record<string, unknown> = {
       fileId: params.fileId,
-      beforeSeconds: params.beforeSeconds || 8,
-      afterSeconds: params.afterSeconds || 2,
       targetPlayerBox: params.targetPlayerBox ?? null,
-    });
+    };
+
+    if (typeof params.beforeSeconds === 'number') {
+      payload.beforeSeconds = params.beforeSeconds;
+    }
+
+    if (typeof params.afterSeconds === 'number') {
+      payload.afterSeconds = params.afterSeconds;
+    }
+
+    const response = await HttpService.post<ProcessResponse & { error?: string }>(API_ENDPOINTS.PROCESS, payload);
     
     if (!response.success) {
       throw new Error(getResponseError(response, '开始处理失败'));
@@ -228,6 +265,48 @@ export class ApiService {
 
   static getStreamUrl(filename: string): string {
     return `${API_CONFIG.BASE_URL}/api/stream/${filename}`;
+  }
+
+  static getTaskSourceStreamUrl(taskId: string): string {
+    return buildApiUrl(`/api/tasks/${taskId}/source/stream`);
+  }
+
+  static async getSelectionFrameCandidates(fileId: string): Promise<SelectionFrame[]> {
+    const response = await HttpService.get<SelectionFrameCandidatesResponse>(
+      `${API_ENDPOINTS.UPLOAD_CANDIDATES}/${fileId}`
+    );
+
+    if (!response.success) {
+      throw new Error(getResponseError(response, '获取智能推荐截图失败'));
+    }
+
+    return Array.isArray(response.candidateFrames) ? response.candidateFrames : [];
+  }
+
+  static async getReusableSource(taskId: string): Promise<ReusableVideoSource> {
+    const response = await HttpService.get<ReusableSourceResponse>(`/api/tasks/${taskId}/source`);
+
+    if (!response.success) {
+      throw new Error(getResponseError(response, '获取源视频失败'));
+    }
+
+    return {
+      taskId: response.taskId,
+      fileId: response.fileId,
+      filename: response.filename,
+      fileSize: response.fileSize,
+      mimeType: response.mimeType,
+      sourceStreamUrl: buildApiUrl(response.sourceStreamUrl),
+      targetPlayerBox: response.targetPlayerBox ?? null,
+    };
+  }
+
+  static async downloadSelectedClips(taskId: string, params: DownloadClipArchiveParams): Promise<void> {
+    await HttpService.postDownload(
+      `/api/download/clips/${taskId}`,
+      params,
+      `hoopcut_related_clips_${taskId}.zip`,
+    );
   }
 
   /**

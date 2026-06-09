@@ -1,0 +1,167 @@
+- main [ref=e3]:
+  - generic [ref=e8]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: H
+          - generic [ref=e16]:
+            - paragraph [ref=e17]: HoopCut
+            - paragraph [ref=e18]: Basketball highlight generator
+        - generic [ref=e20]: 本地视频处理
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - generic [ref=e25]: AI 进球检测
+            - generic [ref=e27]: 人物追踪初始化
+            - generic [ref=e29]: 自动导出个人高光
+          - generic [ref=e30]:
+            - heading "把一整场比赛 压成目标球员的高光片。" [level=1] [ref=e31]:
+              - text: 把一整场比赛
+              - text: 压成目标球员的高光片。
+            - paragraph [ref=e32]: 上传整段比赛视频，先定位目标球员第一次清晰出镜的时间点，再框选该人物。HoopCut 会自动分析全段素材，尽量把和这个人相关的进球与助攻片段全部切出来。
+          - generic [ref=e33]:
+            - button "立即上传视频" [ref=e34] [cursor=pointer]:
+              - generic [ref=e35]:
+                - text: 立即上传视频
+                - img
+            - generic [ref=e36]: 当前版本聚焦于单目标球员的相关片段提取，不做全队战术分析。
+        - generic [ref=e38]:
+          - generic [ref=e39]:
+            - generic [ref=e40]: Workflow
+            - img [ref=e41]
+          - generic [ref=e44]:
+            - generic [ref=e45]:
+              - generic [ref=e46]: "01"
+              - generic [ref=e47]: 上传原始比赛视频
+              - generic [ref=e48]: 支持大文件，本地分块上传
+            - generic [ref=e49]:
+              - generic [ref=e50]: "02"
+              - generic [ref=e51]: 先确认起始帧，再框选人物
+              - generic [ref=e52]: 先选对时间点，再锁定目标球员
+            - generic [ref=e53]:
+              - generic [ref=e54]: "03"
+              - generic [ref=e55]: 自动分析并导出片段
+              - generic [ref=e56]: 优先减少漏掉目标球员的相关镜头
+      - generic [ref=e57]:
+        - generic [ref=e59]:
+          - img [ref=e61]
+          - generic [ref=e68]: 先锁定目标球员
+          - paragraph [ref=e69]: 不是泛泛识别比赛，而是先把目标人物定准，并自动补充参考画面。
+        - generic [ref=e71]:
+          - img [ref=e73]
+          - generic [ref=e77]: 只围绕目标来筛镜头
+          - paragraph [ref=e78]: 先锁定目标人物，再分析整段视频里的相关进球和助攻。
+        - generic [ref=e80]:
+          - img [ref=e82]
+          - generic [ref=e85]: 默认策略自动处理
+          - paragraph [ref=e86]: 上传、框选、开始处理，不再要求你手动调剪辑参数。
+    - generic [ref=e88]:
+      - generic [ref=e89]:
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]:
+              - generic [ref=e94]:
+                - img [ref=e95]
+                - heading "run-demo.mp4" [level=4] [ref=e98]
+              - generic [ref=e99]:
+                - generic [ref=e100]:
+                  - generic [ref=e101]: "文件大小:"
+                  - generic [ref=e102]: 1.58 MB
+                - generic [ref=e103]:
+                  - generic [ref=e104]: "视频时长:"
+                  - generic [ref=e105]: 未知
+                - generic [ref=e106]:
+                  - generic [ref=e107]: "文件格式:"
+                  - generic [ref=e108]: mp4
+            - button "移除" [ref=e110] [cursor=pointer]:
+              - generic [ref=e111]:
+                - img
+                - text: 移除
+          - generic [ref=e113]: 先定位目标球员第一次清晰出镜的位置，再确认框选起始帧。没有确认起始帧前，不会进入下一步框人。
+          - generic [ref=e114]:
+            - generic [ref=e115]:
+              - generic [ref=e116]:
+                - generic [ref=e117]:
+                  - img [ref=e118]
+                  - generic [ref=e122]: 确认框选起始帧
+                - paragraph [ref=e123]: 先拖时间轴，再确认当前播放位置。后续框选和整段追踪都会从这里开始。
+              - button "使用当前播放位置作为框选帧" [ref=e124] [cursor=pointer]:
+                - generic [ref=e125]:
+                  - img
+                  - text: 使用当前播放位置作为框选帧
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - generic [ref=e129]:
+                  - generic [ref=e130]: 当前播放位置：00:00（0.00s）
+                  - generic [ref=e131]: 视频总时长：未知
+                - slider [disabled] [ref=e132]: "0"
+                - generic [ref=e133]:
+                  - button "开头" [ref=e134] [cursor=pointer]
+                  - button "退 5s" [ref=e135] [cursor=pointer]:
+                    - generic [ref=e136]:
+                      - img
+                      - text: 退 5s
+                  - button "退 1s" [ref=e137] [cursor=pointer]
+                  - button "进 1s" [ref=e138] [cursor=pointer]
+                  - button "进 5s" [ref=e139] [cursor=pointer]:
+                    - generic [ref=e140]:
+                      - text: 进 5s
+                      - img
+                  - button "结尾" [disabled]
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]:
+                    - generic [ref=e144]:
+                      - generic [ref=e145]: 当前已确认的框选起始帧
+                      - generic [ref=e146]: 00:00（0.00s）
+                    - generic [ref=e148]: 已确认
+                  - img "已确认的框选起始帧" [ref=e149]
+                  - generic [ref=e150]: 这张静态画面才是下一步框选目标球员时真正使用的帧。
+                - generic [ref=e151]:
+                  - generic [ref=e152]: 选帧建议
+                  - list [ref=e153]:
+                    - listitem [ref=e154]: 选择目标球员完整出镜、没有严重遮挡的一帧。
+                    - listitem [ref=e155]: 尽量避开背身、模糊、运动拖影明显的时刻。
+                    - listitem [ref=e156]: 如果第一个候选时间点不理想，先继续拖动，再重新确认。
+                  - button "重新选择起始帧" [ref=e182] [cursor=pointer]:
+                    - generic [ref=e183]:
+                      - img
+                      - text: 重新选择起始帧
+        - generic [ref=e185]:
+          - generic [ref=e186]:
+            - generic [ref=e187]:
+              - generic [ref=e188]:
+                - img [ref=e189]
+                - generic [ref=e195]: 框选目标球员
+              - paragraph [ref=e196]: 在已确认的起始帧里拖拽框住目标球员的完整身体区域。系统会自动结合这一帧前后的参考画面，尽量减少后续识别漂移。
+            - button "清除选区" [disabled]:
+              - generic:
+                - img
+                - text: 清除选区
+          - generic [ref=e198]:
+            - generic [ref=e199]: 当前框选帧：00:00（0.00s）
+            - generic [ref=e200]: 建议框住头到脚，并尽量包含完整球衣区域，方便系统自动扩充人物参考。
+          - img "人物框选帧" [ref=e203]
+          - generic [ref=e205]: 尚未选择人物区域
+      - generic [ref=e164]:
+        - generic [ref=e165]:
+          - paragraph [ref=e166]: Ready Check
+          - heading "开始自动剪辑" [level=2] [ref=e167]
+          - paragraph [ref=e168]: 当前版本会自动使用默认剪辑策略，优先保留和目标球员相关的进球、助攻与可能相关片段。
+        - generic [ref=e169]:
+          - generic [ref=e170]:
+            - generic [ref=e171]: 视频已上传
+            - generic [ref=e172]: 已就绪
+          - generic [ref=e173]:
+            - generic [ref=e174]: 框选起始帧已确认
+            - generic [ref=e175]: 已完成
+          - generic [ref=e176]:
+            - generic [ref=e177]: 目标球员已框选
+            - generic [ref=e178]: 待操作
+          - generic [ref=e179]:
+            - generic [ref=e180]: 默认剪辑策略
+            - generic [ref=e181]: 6.0s / 2.0s
+        - button "开始自动剪辑" [disabled]:
+          - generic:
+            - text: 开始自动剪辑
+            - img

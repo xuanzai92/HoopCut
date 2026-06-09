@@ -1,0 +1,135 @@
+- main [ref=e3]:
+  - generic [ref=e293]:
+    - generic [ref=e294]:
+      - generic [ref=e295]:
+        - generic [ref=e297]: 处理完成
+        - generic [ref=e298]:
+          - heading "处理进度" [level=1] [ref=e299]
+          - paragraph [ref=e300]: 当前页面展示本地处理任务的实时状态，以及系统自动导出相关片段的进度。
+      - generic [ref=e301]:
+        - button "返回首页" [ref=e302] [cursor=pointer]:
+          - generic [ref=e303]:
+            - img
+            - text: 返回首页
+        - button "查看结果" [ref=e462] [cursor=pointer]:
+          - generic [ref=e463]:
+            - img
+            - text: 查看结果
+        - button "下载视频" [ref=e464] [cursor=pointer]:
+          - generic [ref=e465]:
+            - img
+            - text: 下载视频
+        - button "刷新" [ref=e304] [cursor=pointer]:
+          - generic [ref=e305]:
+            - img
+            - text: 刷新
+    - generic [ref=e306]:
+      - generic [ref=e307]:
+        - generic [ref=e309]:
+          - generic [ref=e310]:
+            - generic [ref=e312]: 处理完成
+            - heading "处理完成" [level=2] [ref=e466]
+            - paragraph [ref=e314]: 处理完成
+          - generic [ref=e315]:
+            - generic [ref=e316]:
+              - generic [ref=e317]:
+                - generic [ref=e318]: 整体进度
+                - generic [ref=e319]: 100%
+              - progressbar [ref=e320]
+            - generic [ref=e322]:
+              - generic [ref=e323]: 阶段
+              - generic [ref=e324]: 6 / 6
+        - generic [ref=e325]:
+          - generic [ref=e327]:
+            - generic [ref=e328]:
+              - img [ref=e330]
+              - generic [ref=e342]: 完成
+            - generic [ref=e343]: 准备任务
+            - paragraph [ref=e344]: 校验参数并初始化本地处理流程。
+          - generic [ref=e346]:
+            - generic [ref=e347]:
+              - img [ref=e349]
+              - generic [ref=e357]: 完成
+            - generic [ref=e358]: 分析画面
+            - paragraph [ref=e359]: 逐帧分析视频内容和目标球员出镜位置。
+          - generic [ref=e361]:
+            - generic [ref=e362]:
+              - img [ref=e364]
+              - generic [ref=e368]: 完成
+            - generic [ref=e369]: 检测投篮
+            - paragraph [ref=e370]: 识别出手、轨迹和进球结果。
+          - generic [ref=e372]:
+            - generic [ref=e373]:
+              - img [ref=e375]
+              - generic [ref=e379]: 完成
+            - generic [ref=e380]: 剪辑高光
+            - paragraph [ref=e381]: 拼接属于你的进球和助攻镜头。
+          - generic [ref=e383]:
+            - generic [ref=e384]:
+              - img [ref=e386]
+              - generic [ref=e390]: 完成
+            - generic [ref=e391]: 整理结果
+            - paragraph [ref=e392]: 写入统计信息并导出最终文件。
+          - generic [ref=e394]:
+            - generic [ref=e395]:
+              - img [ref=e397]
+              - generic [ref=e401]: 完成
+            - generic [ref=e402]: 处理完成
+            - paragraph [ref=e403]: 结果已经可查看或下载。
+      - generic [ref=e404]:
+        - generic [ref=e405]:
+          - generic [ref=e407]:
+            - generic [ref=e408]:
+              - generic [ref=e409]:
+                - generic [ref=e410]: Task Overview
+                - heading "任务信息" [level=3] [ref=e411]
+              - generic [ref=e413]: 已完成
+            - generic [ref=e414]:
+              - generic [ref=e415]:
+                - generic [ref=e416]: 任务 ID
+                - generic [ref=e417]: f3b9aa7e-c7c3-416e-a351-352d818535a7
+              - generic [ref=e418]:
+                - generic [ref=e419]: 创建时间
+                - generic [ref=e420]: 2026/6/8 22:03:52
+              - generic [ref=e421]:
+                - generic [ref=e422]: 当前阶段
+                - generic [ref=e423]: 处理完成
+              - generic [ref=e424]:
+                - generic [ref=e425]: 最近更新时间
+                - generic [ref=e426]: 2026/6/8 22:03:52
+          - generic [ref=e428]:
+            - generic [ref=e429]:
+              - generic [ref=e430]: Stats
+              - heading "处理统计" [level=3] [ref=e431]
+            - generic [ref=e432]:
+              - generic [ref=e433]:
+                - generic [ref=e434]:
+                  - generic [ref=e435]: 总投篮次数
+                  - img [ref=e436]
+                - generic [ref=e440]: "2"
+              - generic [ref=e441]:
+                - generic [ref=e442]:
+                  - generic [ref=e443]: 成功投篮
+                  - img [ref=e444]
+                - generic [ref=e447]: "1"
+              - generic [ref=e448]:
+                - generic [ref=e449]:
+                  - generic [ref=e450]: 相关片段
+                  - img [ref=e451]
+                - generic [ref=e454]: "1"
+              - generic [ref=e455]:
+                - generic [ref=e456]:
+                  - generic [ref=e457]: 跟踪覆盖率
+                  - img [ref=e458]
+                - generic [ref=e461]: 100.0%
+        - generic [ref=e468]:
+          - generic [ref=e469]: 本地处理已完成。结果页会同时展示已确认片段和待确认片段，优先减少漏掉你的相关镜头。
+          - generic [ref=e470]:
+            - button "查看处理结果" [ref=e471] [cursor=pointer]:
+              - generic [ref=e472]:
+                - img
+                - text: 查看处理结果
+            - button "下载结果视频" [ref=e473] [cursor=pointer]:
+              - generic [ref=e474]:
+                - img
+                - text: 下载结果视频

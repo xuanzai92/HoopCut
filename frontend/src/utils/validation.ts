@@ -2,7 +2,7 @@
  * 验证工具函数
  */
 import { FILE_LIMITS } from './constants';
-import type { PlayerSelectionBox } from '@/types';
+import type { PlayerSelectionBox, SelectionFrame } from '@/types';
 
 // 支持的视频格式
 export const SUPPORTED_VIDEO_FORMATS: readonly string[] = [
@@ -73,7 +73,7 @@ export const validateTargetPlayerBox = (
   selection: PlayerSelectionBox | null | undefined
 ): { valid: boolean; error?: string } => {
   if (!selection) {
-    return { valid: false, error: '请先定位你出镜的画面，再框选你自己' };
+    return { valid: false, error: '请先确认目标球员清晰出镜的画面，再框选目标球员' };
   }
 
   const numericFields = [
@@ -112,6 +112,27 @@ export const validateTargetPlayerBox = (
   }
 
   return { valid: true };
+};
+
+export const syncSelectionBoxToFrame = (
+  selection: PlayerSelectionBox | null | undefined,
+  frame: SelectionFrame | null | undefined
+): PlayerSelectionBox | null => {
+  if (!selection) {
+    return null;
+  }
+
+  if (!frame) {
+    return { ...selection };
+  }
+
+  return {
+    ...selection,
+    frameWidth: frame.width,
+    frameHeight: frame.height,
+    selectionTime: frame.time,
+    selectionFrame: frame.frame,
+  };
 };
 
 export const validateProcessingConfig2 = (

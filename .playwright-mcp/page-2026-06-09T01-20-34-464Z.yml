@@ -1,0 +1,107 @@
+- main [ref=e3]:
+  - generic [ref=e373]:
+    - generic [ref=e374]:
+      - generic [ref=e375]:
+        - generic [ref=e377]: 处理中
+        - generic [ref=e378]:
+          - heading "处理进度" [level=1] [ref=e379]
+          - paragraph [ref=e380]: 当前页面只负责展示自动处理是否已经完成。处理结束后，直接去结果页检查已确认的进球、助攻片段；只有怀疑漏剪时，再看高级排错区。
+      - generic [ref=e381]:
+        - button "返回首页" [ref=e382] [cursor=pointer]:
+          - generic [ref=e383]:
+            - img
+            - text: 返回首页
+        - button "刷新" [ref=e384] [cursor=pointer]:
+          - generic [ref=e385]:
+            - img
+            - text: 刷新
+    - generic [ref=e386]:
+      - generic [ref=e387]:
+        - generic [ref=e389]:
+          - generic [ref=e390]:
+            - generic [ref=e392]: 处理中
+            - heading "分析画面" [level=2] [ref=e393]
+            - paragraph [ref=e394]: 正在分析视频... (60/470)
+          - generic [ref=e395]:
+            - generic [ref=e396]:
+              - generic [ref=e397]:
+                - generic [ref=e398]: 整体进度
+                - generic [ref=e399]: 17%
+              - progressbar [ref=e400]
+            - generic [ref=e402]:
+              - generic [ref=e403]: 阶段
+              - generic [ref=e404]: 2 / 6
+        - generic [ref=e405]:
+          - generic [ref=e407]:
+            - generic [ref=e408]:
+              - img [ref=e410]
+              - generic [ref=e422]: 完成
+            - generic [ref=e423]: 准备任务
+            - paragraph [ref=e424]: 初始化本地处理流程并准备进入整段分析。
+          - generic [ref=e426]:
+            - generic [ref=e427]:
+              - img [ref=e429]
+              - generic [ref=e437]: 当前
+            - generic [ref=e438]: 分析画面
+            - paragraph [ref=e439]: 逐帧分析视频内容和目标球员出镜位置。
+          - generic [ref=e441]:
+            - generic [ref=e442]:
+              - img [ref=e444]
+              - generic [ref=e448]: 待处理
+            - generic [ref=e449]: 检测投篮
+            - paragraph [ref=e450]: 识别出手、轨迹和进球结果。
+          - generic [ref=e452]:
+            - generic [ref=e453]:
+              - img [ref=e455]
+              - generic [ref=e463]: 待处理
+            - generic [ref=e464]: 目标归因
+            - paragraph [ref=e465]: 确认哪些回合属于目标球员，并自动补出容易漏掉的相关片段。
+          - generic [ref=e467]:
+            - generic [ref=e468]:
+              - img [ref=e470]
+              - generic [ref=e474]: 待处理
+            - generic [ref=e475]: 导出片段
+            - paragraph [ref=e476]: 按相关回合切出进球、助攻和系统补充片段。
+          - generic [ref=e478]:
+            - generic [ref=e479]:
+              - img [ref=e481]
+              - generic [ref=e485]: 待处理
+            - generic [ref=e486]: 整理结果
+            - paragraph [ref=e487]: 写入片段清单和结果说明，准备最终验收。
+          - generic [ref=e489]:
+            - generic [ref=e490]:
+              - img [ref=e492]
+              - generic [ref=e496]: 待处理
+            - generic [ref=e497]: 处理完成
+            - paragraph [ref=e498]: 结果已经可查看或下载。
+      - generic [ref=e500]:
+        - generic [ref=e502]:
+          - generic [ref=e503]:
+            - generic [ref=e504]:
+              - generic [ref=e505]: 任务
+              - heading "当前任务" [level=3] [ref=e506]
+            - generic [ref=e508]: 处理中
+          - generic [ref=e510]:
+            - generic [ref=e511]: 当前阶段
+            - generic [ref=e512]: 正在分析视频... (60/470)
+          - generic [ref=e513]: 这页只用来确认自动处理是否完成。真正的验收动作放在结果页：先下载已确认片段；只有怀疑漏剪时，再看高级排错区里的系统补充片段，不满意就重新框选并重跑。
+        - generic [ref=e515]:
+          - generic [ref=e516]:
+            - generic [ref=e517]: 交付
+            - heading "交付概览" [level=3] [ref=e518]
+          - generic [ref=e519]:
+            - generic [ref=e520]:
+              - generic [ref=e521]:
+                - generic [ref=e522]: 主交付片段
+                - img [ref=e523]
+              - generic [ref=e527]: "0"
+            - generic [ref=e528]:
+              - generic [ref=e529]:
+                - generic [ref=e530]: 已确认片段
+                - img [ref=e531]
+              - generic [ref=e534]: "0"
+            - generic [ref=e535]:
+              - generic [ref=e536]:
+                - generic [ref=e537]: 高级排错片段
+                - img [ref=e538]
+              - generic [ref=e541]: "0"

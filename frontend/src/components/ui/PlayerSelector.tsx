@@ -16,6 +16,25 @@ interface FramePoint {
   y: number;
 }
 
+type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
+
+type InteractionState =
+  | {
+      kind: 'draw';
+      startPoint: FramePoint;
+    }
+  | {
+      kind: 'move';
+      startPoint: FramePoint;
+      baseSelection: PlayerSelectionBox;
+    }
+  | {
+      kind: 'resize';
+      startPoint: FramePoint;
+      baseSelection: PlayerSelectionBox;
+      handle: ResizeHandle;
+    };
+
 const MIN_BOX_SIZE = 20;
 
 const clamp = (value: number, min: number, max: number): number => {
@@ -44,6 +63,82 @@ const buildSelectionBox = (
   };
 };
 
+const roundSelectionBox = (selection: PlayerSelectionBox): PlayerSelectionBox => ({
+  ...selection,
+  x: Math.round(selection.x),
+  y: Math.round(selection.y),
+  width: Math.round(selection.width),
+  height: Math.round(selection.height),
+});
+
+const isPointInsideSelection = (
+  point: FramePoint,
+  selection: PlayerSelectionBox,
+): boolean => {
+  const right = selection.x + selection.width;
+  const bottom = selection.y + selection.height;
+  return (
+    point.x >= selection.x
+    && point.x <= right
+    && point.y >= selection.y
+    && point.y <= bottom
+  );
+};
+
+const moveSelectionBox = (
+  selection: PlayerSelectionBox,
+  deltaX: number,
+  deltaY: number,
+  frame: SelectionFrame,
+): PlayerSelectionBox => {
+  const maxX = Math.max(frame.width - selection.width, 0);
+  const maxY = Math.max(frame.height - selection.height, 0);
+
+  return roundSelectionBox({
+    ...selection,
+    x: clamp(selection.x + deltaX, 0, maxX),
+    y: clamp(selection.y + deltaY, 0, maxY),
+  });
+};
+
+const resizeSelectionBox = (
+  selection: PlayerSelectionBox,
+  point: FramePoint,
+  handle: ResizeHandle,
+  frame: SelectionFrame,
+): PlayerSelectionBox => {
+  const left = selection.x;
+  const top = selection.y;
+  const right = selection.x + selection.width;
+  const bottom = selection.y + selection.height;
+
+  let nextLeft = left;
+  let nextTop = top;
+  let nextRight = right;
+  let nextBottom = bottom;
+
+  if (handle === 'nw' || handle === 'sw') {
+    nextLeft = clamp(point.x, 0, right - MIN_BOX_SIZE);
+  }
+  if (handle === 'ne' || handle === 'se') {
+    nextRight = clamp(point.x, left + MIN_BOX_SIZE, frame.width);
+  }
+  if (handle === 'nw' || handle === 'ne') {
+    nextTop = clamp(point.y, 0, bottom - MIN_BOX_SIZE);
+  }
+  if (handle === 'sw' || handle === 'se') {
+    nextBottom = clamp(point.y, top + MIN_BOX_SIZE, frame.height);
+  }
+
+  return roundSelectionBox({
+    ...selection,
+    x: nextLeft,
+    y: nextTop,
+    width: nextRight - nextLeft,
+    height: nextBottom - nextTop,
+  });
+};
+
 export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
   frame,
   value,
@@ -51,7 +146,7 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
   disabled = false,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<FramePoint | null>(null);
+  const interactionRef = useRef<InteractionState | null>(null);
   const draftSelectionRef = useRef<PlayerSelectionBox | null>(null);
   const [draftSelection, setDraftSelection] = useState<PlayerSelectionBox | null>(null);
 
@@ -90,13 +185,19 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
     };
   };
 
-  const startSelection = (
-    point: FramePoint,
+  const startInteraction = (
+    interaction: InteractionState,
     target: HTMLDivElement,
-    pointerId?: number
+    pointerId?: number,
   ) => {
-    const nextSelection = buildSelectionBox(point, point, frame);
-    dragStartRef.current = point;
+    let nextSelection: PlayerSelectionBox;
+    if (interaction.kind === 'draw') {
+      nextSelection = buildSelectionBox(interaction.startPoint, interaction.startPoint, frame);
+    } else {
+      nextSelection = interaction.baseSelection;
+    }
+
+    interactionRef.current = interaction;
     draftSelectionRef.current = nextSelection;
     setDraftSelection(nextSelection);
 
@@ -106,12 +207,30 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
   };
 
   const updateSelection = (point: FramePoint) => {
-    const dragStart = dragStartRef.current;
-    if (!dragStart) {
+    const interaction = interactionRef.current;
+    if (!interaction) {
       return;
     }
 
-    const nextSelection = buildSelectionBox(dragStart, point, frame);
+    let nextSelection: PlayerSelectionBox;
+    if (interaction.kind === 'draw') {
+      nextSelection = buildSelectionBox(interaction.startPoint, point, frame);
+    } else if (interaction.kind === 'move') {
+      nextSelection = moveSelectionBox(
+        interaction.baseSelection,
+        point.x - interaction.startPoint.x,
+        point.y - interaction.startPoint.y,
+        frame,
+      );
+    } else {
+      nextSelection = resizeSelectionBox(
+        interaction.baseSelection,
+        point,
+        interaction.handle,
+        frame,
+      );
+    }
+
     draftSelectionRef.current = nextSelection;
     setDraftSelection(nextSelection);
   };
@@ -121,14 +240,30 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
     target?: HTMLDivElement,
     pointerId?: number
   ) => {
-    const dragStart = dragStartRef.current;
-    if (!dragStart) {
+    const interaction = interactionRef.current;
+    if (!interaction) {
       return;
     }
 
     let nextSelection = draftSelectionRef.current;
     if (point) {
-      nextSelection = buildSelectionBox(dragStart, point, frame);
+      if (interaction.kind === 'draw') {
+        nextSelection = buildSelectionBox(interaction.startPoint, point, frame);
+      } else if (interaction.kind === 'move') {
+        nextSelection = moveSelectionBox(
+          interaction.baseSelection,
+          point.x - interaction.startPoint.x,
+          point.y - interaction.startPoint.y,
+          frame,
+        );
+      } else {
+        nextSelection = resizeSelectionBox(
+          interaction.baseSelection,
+          point,
+          interaction.handle,
+          frame,
+        );
+      }
     }
 
     if (
@@ -139,7 +274,7 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
       target.releasePointerCapture(pointerId);
     }
 
-    dragStartRef.current = null;
+    interactionRef.current = null;
     draftSelectionRef.current = null;
     setDraftSelection(null);
 
@@ -165,11 +300,47 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
       return;
     }
 
-    startSelection(point, event.currentTarget, event.pointerId);
+    const targetElement = event.target as HTMLElement | null;
+    const resizeHandle = targetElement?.dataset.handle as ResizeHandle | undefined;
+    if (value && resizeHandle) {
+      startInteraction(
+        {
+          kind: 'resize',
+          startPoint: point,
+          baseSelection: value,
+          handle: resizeHandle,
+        },
+        event.currentTarget,
+        event.pointerId,
+      );
+      return;
+    }
+
+    if (value && isPointInsideSelection(point, value)) {
+      startInteraction(
+        {
+          kind: 'move',
+          startPoint: point,
+          baseSelection: value,
+        },
+        event.currentTarget,
+        event.pointerId,
+      );
+      return;
+    }
+
+    startInteraction(
+      {
+        kind: 'draw',
+        startPoint: point,
+      },
+      event.currentTarget,
+      event.pointerId,
+    );
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (disabled || !dragStartRef.current) {
+    if (disabled || !interactionRef.current) {
       return;
     }
 
@@ -182,7 +353,7 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
   };
 
   const finishSelection = (event?: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStartRef.current) {
+    if (!interactionRef.current) {
       return;
     }
 
@@ -204,11 +375,44 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
       return;
     }
 
-    startSelection(point, event.currentTarget);
+    const targetElement = event.target as HTMLElement | null;
+    const resizeHandle = targetElement?.dataset.handle as ResizeHandle | undefined;
+    if (value && resizeHandle) {
+      startInteraction(
+        {
+          kind: 'resize',
+          startPoint: point,
+          baseSelection: value,
+          handle: resizeHandle,
+        },
+        event.currentTarget,
+      );
+      return;
+    }
+
+    if (value && isPointInsideSelection(point, value)) {
+      startInteraction(
+        {
+          kind: 'move',
+          startPoint: point,
+          baseSelection: value,
+        },
+        event.currentTarget,
+      );
+      return;
+    }
+
+    startInteraction(
+      {
+        kind: 'draw',
+        startPoint: point,
+      },
+      event.currentTarget,
+    );
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (disabled || !dragStartRef.current) {
+    if (disabled || !interactionRef.current) {
       return;
     }
 
@@ -221,7 +425,7 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
   };
 
   const handleMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!dragStartRef.current) {
+    if (!interactionRef.current) {
       return;
     }
 
@@ -235,10 +439,10 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-slate-900">
             <ScanFace size={18} className="text-orange-500" />
-            <span className="text-base font-semibold">框选你自己</span>
+            <span className="text-base font-semibold">框选目标球员</span>
           </div>
           <p className="text-sm text-slate-500">
-            在你选中的出镜画面里拖拽框住完整身体区域。后续人物跟踪会从这个时间点开始初始化目标。
+            在已确认的起始帧里拖拽框住目标球员的完整身体区域。已经画好的选区可以直接拖动微调，也可以拖拽四角继续调整范围。
           </p>
         </div>
         <Button
@@ -258,7 +462,7 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
           <div className="font-medium text-current">
             当前框选帧：{formatDuration(frame.time)}（{frame.time.toFixed(2)}s）
           </div>
-          <div className="text-sm text-current/80">建议框住头到脚，并尽量包含完整球衣区域。</div>
+          <div className="text-sm text-current/80">建议框住头到脚，并尽量包含完整球衣区域，方便系统自动扩充人物参考。</div>
         </div>
       </Alert>
 
@@ -292,8 +496,26 @@ export const PlayerSelector: React.FC<PlayerSelectorProps> = ({
               style={selectionStyle}
             >
               <div className="absolute left-0 top-0 bg-[#FF6B35] px-2 py-1 text-xs font-semibold text-white">
-                {draftSelection ? '拖拽中' : '目标球员'}
+                {draftSelection
+                  ? interactionRef.current?.kind === 'move'
+                    ? '微调中'
+                    : interactionRef.current?.kind === 'resize'
+                      ? '调整范围中'
+                      : '拖拽中'
+                  : '目标球员'}
               </div>
+              {[
+                { handle: 'nw', className: '-left-2 -top-2 cursor-nwse-resize' },
+                { handle: 'ne', className: '-right-2 -top-2 cursor-nesw-resize' },
+                { handle: 'sw', className: '-bottom-2 -left-2 cursor-nesw-resize' },
+                { handle: 'se', className: '-bottom-2 -right-2 cursor-nwse-resize' },
+              ].map(({ handle, className }) => (
+                <div
+                  key={handle}
+                  data-handle={handle}
+                  className={`absolute h-4 w-4 rounded-full border-2 border-white bg-[#FF6B35] shadow ${className}`}
+                />
+              ))}
             </div>
           ) : null}
         </div>

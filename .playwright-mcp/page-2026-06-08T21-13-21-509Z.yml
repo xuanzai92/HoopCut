@@ -1,0 +1,107 @@
+- main [ref=e3]:
+  - generic [ref=e338]:
+    - generic [ref=e339]:
+      - generic [ref=e340]:
+        - generic [ref=e342]: 处理中
+        - generic [ref=e343]:
+          - heading "处理进度" [level=1] [ref=e344]
+          - paragraph [ref=e345]: 当前页面只负责展示自动处理是否已经完成。处理结束后，直接去结果页检查相关片段并下载 ZIP。
+      - generic [ref=e346]:
+        - button "返回首页" [ref=e347] [cursor=pointer]:
+          - generic [ref=e348]:
+            - img
+            - text: 返回首页
+        - button "刷新" [ref=e349] [cursor=pointer]:
+          - generic [ref=e350]:
+            - img
+            - text: 刷新
+    - generic [ref=e351]:
+      - generic [ref=e352]:
+        - generic [ref=e354]:
+          - generic [ref=e355]:
+            - generic [ref=e357]: 处理中
+            - heading "检测投篮" [level=2] [ref=e358]
+            - paragraph [ref=e359]: 正在检测进球时刻...
+          - generic [ref=e360]:
+            - generic [ref=e361]:
+              - generic [ref=e362]:
+                - generic [ref=e363]: 整体进度
+                - generic [ref=e364]: 10%
+              - progressbar [ref=e365]
+            - generic [ref=e367]:
+              - generic [ref=e368]: 阶段
+              - generic [ref=e369]: 3 / 6
+        - generic [ref=e370]:
+          - generic [ref=e372]:
+            - generic [ref=e373]:
+              - img [ref=e375]
+              - generic [ref=e387]: 完成
+            - generic [ref=e388]: 准备任务
+            - paragraph [ref=e389]: 初始化本地处理流程并准备进入整段分析。
+          - generic [ref=e391]:
+            - generic [ref=e392]:
+              - img [ref=e394]
+              - generic [ref=e402]: 完成
+            - generic [ref=e403]: 分析画面
+            - paragraph [ref=e404]: 逐帧分析视频内容和目标球员出镜位置。
+          - generic [ref=e406]:
+            - generic [ref=e407]:
+              - img [ref=e409]
+              - generic [ref=e413]: 当前
+            - generic [ref=e414]: 检测投篮
+            - paragraph [ref=e415]: 识别出手、轨迹和进球结果。
+          - generic [ref=e417]:
+            - generic [ref=e418]:
+              - img [ref=e420]
+              - generic [ref=e428]: 待处理
+            - generic [ref=e429]: 目标归因
+            - paragraph [ref=e430]: 确认哪些回合属于目标球员，并自动补出容易漏掉的相关片段。
+          - generic [ref=e432]:
+            - generic [ref=e433]:
+              - img [ref=e435]
+              - generic [ref=e439]: 待处理
+            - generic [ref=e440]: 导出片段
+            - paragraph [ref=e441]: 按相关回合切出进球、助攻和系统补充片段。
+          - generic [ref=e443]:
+            - generic [ref=e444]:
+              - img [ref=e446]
+              - generic [ref=e450]: 待处理
+            - generic [ref=e451]: 整理结果
+            - paragraph [ref=e452]: 写入片段清单和结果说明，准备最终验收。
+          - generic [ref=e454]:
+            - generic [ref=e455]:
+              - img [ref=e457]
+              - generic [ref=e461]: 待处理
+            - generic [ref=e462]: 处理完成
+            - paragraph [ref=e463]: 结果已经可查看或下载。
+      - generic [ref=e465]:
+        - generic [ref=e467]:
+          - generic [ref=e468]:
+            - generic [ref=e469]:
+              - generic [ref=e470]: 任务
+              - heading "当前任务" [level=3] [ref=e471]
+            - generic [ref=e473]: 处理中
+          - generic [ref=e475]:
+            - generic [ref=e476]: 当前阶段
+            - generic [ref=e477]: 正在检测进球时刻...
+          - generic [ref=e478]: 这页只用来确认自动处理是否完成。真正的验收动作放在结果页：检查全部相关片段，直接下载 ZIP，不满意再重新框选并重跑。
+        - generic [ref=e480]:
+          - generic [ref=e481]:
+            - generic [ref=e482]: 交付
+            - heading "交付概览" [level=3] [ref=e483]
+          - generic [ref=e484]:
+            - generic [ref=e485]:
+              - generic [ref=e486]:
+                - generic [ref=e487]: 相关片段
+                - img [ref=e488]
+              - generic [ref=e492]: "0"
+            - generic [ref=e493]:
+              - generic [ref=e494]:
+                - generic [ref=e495]: 已确认片段
+                - img [ref=e496]
+              - generic [ref=e499]: "0"
+            - generic [ref=e500]:
+              - generic [ref=e501]:
+                - generic [ref=e502]: 系统补充片段
+                - img [ref=e503]
+              - generic [ref=e506]: "0"

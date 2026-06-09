@@ -9,9 +9,16 @@ import threading
 import time
 import logging
 import shutil
-from datetime import datetime
+import io
+import zipfile
+import mimetypes
+import base64
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
+import cv2
 from shot_detector_video import BasketballShotDetector
 from video_processor import VideoProcessor
+from player_tracker import TargetPlayerTracker
 
 # 配置日志
 logging.basicConfig(
@@ -39,7 +46,36 @@ DEBUG_KEEP_ARTIFACTS = os.getenv('DEBUG_KEEP_ARTIFACTS', '').strip().lower() in 
     'yes',
     'on',
 }
-TASK_RETENTION_SECONDS = int(os.getenv('TASK_RETENTION_SECONDS', str(24 * 60 * 60)))
+TASK_RETENTION_SECONDS = int(os.getenv('TASK_RETENTION_SECONDS', str(7 * 24 * 60 * 60)))
+AUTO_KEEP_REVIEW_ANNOTATIONS = os.getenv('AUTO_KEEP_REVIEW_ANNOTATIONS', '1').strip().lower() in {
+    '1',
+    'true',
+    'yes',
+    'on',
+}
+DETECTION_PROGRESS_ATTEMPT_RANGES = (
+    (10, 60),
+    (60, 65),
+    (65, 68),
+    (68, 69),
+)
+DEFAULT_CLIP_BEFORE_SECONDS = float(os.getenv('DEFAULT_CLIP_BEFORE_SECONDS', '6'))
+DEFAULT_CLIP_AFTER_SECONDS = float(os.getenv('DEFAULT_CLIP_AFTER_SECONDS', '2'))
+API_RUNTIME_VERSION = 2
+SERVER_STARTED_AT = datetime.now(timezone.utc)
+SMART_SELECTION_MAX_CANDIDATES = 8
+SMART_SELECTION_MAX_SAMPLE_TIMES = 18
+SMART_SELECTION_MAX_FRAME_WIDTH = 960
+SMART_SELECTION_JPEG_QUALITY = 82
+ANNOTATED_REVIEW_COVERAGE_THRESHOLD = 0.55
+ANNOTATED_REVIEW_OUTCOMES = {
+    'review_candidates',
+    'confirmed_with_review_candidates',
+    'target_attempt_fallback',
+    'global_makes_without_target',
+    'no_makes_detected',
+    'no_attempts_detected',
+}
 
 app = Flask(__name__)
 LOCAL_FRONTEND_ORIGINS = list({
@@ -75,6 +111,22 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 # 全局任务存储
 processing_tasks = {}
+TERMINAL_TASK_STATUSES = {'completed', 'failed'}
+PERSISTED_TASK_FIELDS = {
+    'status',
+    'progress',
+    'stage',
+    'result',
+    'error',
+    'created_at',
+    'updated_at',
+    'file_id',
+    'input_path',
+    'before_seconds',
+    'after_seconds',
+    'target_player_box',
+    'effective_target_player_box',
+}
 
 def allowed_file(filename):
     """检查文件扩展名是否被允许"""
@@ -135,11 +187,787 @@ def validate_target_player_box(raw_box):
 
     return normalized_box
 
+
+def find_uploaded_filenames(file_id):
+    if not file_id:
+        return []
+
+    prefix = f'{file_id}_'
+    try:
+        return sorted(
+            filename for filename in os.listdir(app.config['UPLOAD_FOLDER'])
+            if filename.startswith(prefix)
+        )
+    except OSError:
+        return []
+
+
+def find_uploaded_file_path(file_id):
+    uploaded_filenames = find_uploaded_filenames(file_id)
+    if not uploaded_filenames:
+        return None
+
+    return os.path.join(app.config['UPLOAD_FOLDER'], uploaded_filenames[0])
+
+
+def resolve_task_input_path(task):
+    input_path = task.get('input_path')
+    if isinstance(input_path, str) and os.path.exists(input_path):
+        return input_path
+
+    fallback_path = find_uploaded_file_path(task.get('file_id'))
+    if fallback_path and os.path.exists(fallback_path):
+        task['input_path'] = fallback_path
+        return fallback_path
+
+    return None
+
+
+def get_original_upload_filename(file_id, input_path):
+    basename = os.path.basename(input_path)
+    prefix = f'{file_id}_'
+    if file_id and basename.startswith(prefix):
+        return basename[len(prefix):]
+    return basename
+
+
+def guess_video_mime_type(filename):
+    mime_type, _ = mimetypes.guess_type(filename)
+    return mime_type or 'video/mp4'
+
+
+def build_task_source_payload(task_id, task):
+    input_path = resolve_task_input_path(task)
+    if not input_path or not os.path.exists(input_path):
+        raise FileNotFoundError('源视频文件不存在')
+
+    file_id = task.get('file_id')
+    filename = get_original_upload_filename(file_id, input_path)
+    result = task.get('result') if isinstance(task.get('result'), dict) else {}
+    effective_target_player_box = task.get('target_player_box')
+    if not isinstance(effective_target_player_box, dict):
+        effective_target_player_box = (
+            result.get('targetPlayerBox')
+            if isinstance(result.get('targetPlayerBox'), dict)
+            else None
+        )
+    return {
+        'taskId': task_id,
+        'fileId': file_id,
+        'filename': filename,
+        'fileSize': os.path.getsize(input_path),
+        'mimeType': guess_video_mime_type(filename),
+        'sourceStreamUrl': f'/api/tasks/{task_id}/source/stream',
+        'targetPlayerBox': effective_target_player_box,
+    }
+
+
+def delete_uploaded_files(file_id):
+    removed_any = False
+    for filename in find_uploaded_filenames(file_id):
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        try:
+            os.remove(file_path)
+            removed_any = True
+            logger.info(f"清理过期上传文件: {file_path}")
+        except OSError as error:
+            logger.warning(f"删除上传文件失败: {file_path}, error={error}")
+    return removed_any
+
+
+def should_generate_annotated_video(target_player_box):
+    return DEBUG_KEEP_ARTIFACTS or bool(target_player_box)
+
+
+def _normalize_frame_bbox(
+    bbox: Tuple[int, int, int, int],
+    frame_width: int,
+    frame_height: int,
+) -> Optional[Tuple[int, int, int, int]]:
+    x, y, width, height = bbox
+    if width <= 0 or height <= 0:
+        return None
+
+    x = max(0, min(int(x), max(frame_width - 1, 0)))
+    y = max(0, min(int(y), max(frame_height - 1, 0)))
+    width = max(1, min(int(width), max(frame_width - x, 0)))
+    height = max(1, min(int(height), max(frame_height - y, 0)))
+    if width <= 0 or height <= 0:
+        return None
+
+    return (x, y, width, height)
+
+
+def _bbox_iou(
+    first: Optional[Tuple[int, int, int, int]],
+    second: Optional[Tuple[int, int, int, int]],
+) -> float:
+    if first is None or second is None:
+        return 0.0
+
+    ax1, ay1, aw, ah = first
+    bx1, by1, bw, bh = second
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+
+    inter_w = max(inter_x2 - inter_x1, 0)
+    inter_h = max(inter_y2 - inter_y1, 0)
+    inter_area = inter_w * inter_h
+    union = aw * ah + bw * bh - inter_area
+    if union <= 0:
+        return 0.0
+
+    return float(inter_area / union)
+
+
+def _build_smart_selection_candidate_times(duration: float) -> List[float]:
+    if duration <= 0:
+        return [0.0]
+
+    safe_duration = max(duration - 0.25, 0.0)
+    times = {0.0}
+
+    early_seconds = [0.4, 0.9, 1.5, 2.2, 3.2, 4.4, 6.0, 8.0, 10.5, 13.0]
+    for candidate in early_seconds:
+        if candidate <= safe_duration:
+            times.add(round(candidate, 2))
+
+    coverage_ratios = [0.02, 0.04, 0.07, 0.11, 0.16, 0.22, 0.3, 0.4, 0.55, 0.72, 0.88]
+    for ratio in coverage_ratios:
+        times.add(round(safe_duration * ratio, 2))
+
+    ordered_times = sorted(times)
+    if len(ordered_times) <= SMART_SELECTION_MAX_SAMPLE_TIMES:
+        return ordered_times
+
+    # 保留完整的前段密采样，再补充更稀疏的全段覆盖。
+    kept = ordered_times[:10]
+    tail = ordered_times[10:]
+    if not tail:
+        return kept
+
+    step = max(len(tail) / max(SMART_SELECTION_MAX_SAMPLE_TIMES - len(kept), 1), 1.0)
+    index = 0.0
+    while len(kept) < SMART_SELECTION_MAX_SAMPLE_TIMES and int(round(index)) < len(tail):
+        kept.append(tail[int(round(index))])
+        index += step
+
+    deduped = []
+    for candidate_time in kept:
+        if not deduped or abs(deduped[-1] - candidate_time) >= 0.2:
+            deduped.append(candidate_time)
+    return deduped
+
+
+def _resize_frame_for_smart_selection(frame):
+    frame_height, frame_width = frame.shape[:2]
+    if frame_width <= SMART_SELECTION_MAX_FRAME_WIDTH:
+        return frame, 1.0
+
+    scale = SMART_SELECTION_MAX_FRAME_WIDTH / max(frame_width, 1)
+    resized = cv2.resize(
+        frame,
+        (
+            int(round(frame_width * scale)),
+            int(round(frame_height * scale)),
+        ),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    return resized, scale
+
+
+def _score_smart_selection_bbox(
+    bbox: Tuple[int, int, int, int],
+    detector_weight: float,
+    selection_time: float,
+    duration: float,
+    frame_shape,
+) -> float:
+    frame_height, frame_width = frame_shape[:2]
+    _, _, width, height = bbox
+    area_ratio = (width * height) / max(frame_width * frame_height, 1)
+    height_ratio = height / max(frame_height, 1)
+    aspect_ratio = width / max(height, 1)
+
+    center_x = bbox[0] + width / 2.0
+    center_y = bbox[1] + height / 2.0
+    edge_margin = min(
+        center_x / max(frame_width, 1),
+        (frame_width - center_x) / max(frame_width, 1),
+        center_y / max(frame_height, 1),
+        (frame_height - center_y) / max(frame_height, 1),
+    )
+
+    detector_score = min(max(float(detector_weight), 0.0), 2.0) / 2.0
+    size_score = min(1.0, height_ratio / 0.58) * 0.7 + min(1.0, area_ratio / 0.11) * 0.3
+    aspect_score = max(0.0, 1.0 - abs(aspect_ratio - 0.42) / 0.38)
+    edge_score = min(edge_margin / 0.18, 1.0)
+    earlier_score = 1.0 - min(selection_time / max(duration, 1e-6), 1.0)
+
+    return round(
+        size_score * 0.42
+        + detector_score * 0.22
+        + aspect_score * 0.12
+        + edge_score * 0.10
+        + earlier_score * 0.14,
+        4,
+    )
+
+
+def _encode_frame_as_data_url(frame) -> str:
+    encoded, buffer = cv2.imencode(
+        '.jpg',
+        frame,
+        [int(cv2.IMWRITE_JPEG_QUALITY), SMART_SELECTION_JPEG_QUALITY],
+    )
+    if not encoded:
+        raise ValueError('无法编码候选截图')
+
+    payload = base64.b64encode(buffer.tobytes()).decode('ascii')
+    return f'data:image/jpeg;base64,{payload}'
+
+
+def build_selection_frame_candidates(
+    file_id: str,
+    input_path: str,
+    max_candidates: int = SMART_SELECTION_MAX_CANDIDATES,
+) -> List[Dict]:
+    if not file_id or not input_path or not os.path.exists(input_path):
+        return []
+
+    cap = cv2.VideoCapture(input_path)
+    is_opened = getattr(cap, 'isOpened', None)
+    if not callable(is_opened) or not is_opened():
+        return []
+
+    try:
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        if fps <= 0 or total_frames <= 0 or frame_width <= 0 or frame_height <= 0:
+            return []
+
+        duration = total_frames / fps
+        sample_times = _build_smart_selection_candidate_times(duration)
+        hog = TargetPlayerTracker._get_hog_detector()
+        collected: List[Dict] = []
+
+        for sample_time in sample_times:
+            sample_frame = min(max(int(round(sample_time * fps)), 0), max(total_frames - 1, 0))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, sample_frame)
+            ok, frame = cap.read()
+            if not ok or frame is None or frame.size == 0:
+                continue
+
+            detection_frame, scale = _resize_frame_for_smart_selection(frame)
+            rects, weights = hog.detectMultiScale(
+                detection_frame,
+                winStride=(8, 8),
+                padding=(8, 8),
+                scale=1.05,
+            )
+            if len(rects) == 0:
+                continue
+
+            best_candidate = None
+            for rect, weight in zip(rects, weights):
+                x, y, width, height = [int(value) for value in rect]
+                original_bbox = _normalize_frame_bbox(
+                    (
+                        int(round(x / scale)),
+                        int(round(y / scale)),
+                        int(round(width / scale)),
+                        int(round(height / scale)),
+                    ),
+                    frame_width,
+                    frame_height,
+                )
+                if original_bbox is None:
+                    continue
+
+                if original_bbox[3] < int(frame_height * 0.18) or original_bbox[2] < int(frame_width * 0.06):
+                    continue
+
+                candidate_score = _score_smart_selection_bbox(
+                    original_bbox,
+                    float(weight),
+                    sample_time,
+                    duration,
+                    frame.shape,
+                )
+                if best_candidate is None or candidate_score > best_candidate['recommendationScore']:
+                    best_candidate = {
+                        'bbox': original_bbox,
+                        'recommendationScore': candidate_score,
+                    }
+
+            if best_candidate is None:
+                continue
+
+            is_duplicate = any(
+                abs(existing['time'] - sample_time) < 0.45
+                or (
+                    abs(existing['time'] - sample_time) < 1.25
+                    and _bbox_iou(existing['bbox'], best_candidate['bbox']) >= 0.72
+                )
+                for existing in collected
+            )
+            if is_duplicate:
+                continue
+
+            x, y, width, height = best_candidate['bbox']
+            collected.append({
+                'imageUrl': _encode_frame_as_data_url(frame),
+                'width': frame_width,
+                'height': frame_height,
+                'time': round(sample_time, 3),
+                'frame': sample_frame,
+                'source': 'smart',
+                'recommended': True,
+                'recommendationScore': best_candidate['recommendationScore'],
+                'suggestedBox': {
+                    'x': x,
+                    'y': y,
+                    'width': width,
+                    'height': height,
+                    'frameWidth': frame_width,
+                    'frameHeight': frame_height,
+                    'selectionTime': round(sample_time, 3),
+                    'selectionFrame': sample_frame,
+                },
+                'bbox': best_candidate['bbox'],
+            })
+
+        collected.sort(
+            key=lambda candidate: (
+                -float(candidate.get('recommendationScore') or 0.0),
+                float(candidate.get('time') or 0.0),
+            ),
+        )
+
+        trimmed = collected[:max_candidates]
+        for candidate in trimmed:
+            candidate.pop('bbox', None)
+        return trimmed
+    finally:
+        cap.release()
+
+
+def should_keep_annotated_video(target_player_box, diagnostics, tracking_summary, possible_highlights):
+    if DEBUG_KEEP_ARTIFACTS:
+        return True, 'debug'
+
+    if not target_player_box or not AUTO_KEEP_REVIEW_ANNOTATIONS:
+        return False, None
+
+    coverage = float(tracking_summary.get('coverage') or 0.0)
+    outcome = str(diagnostics.get('outcome') or '')
+
+    if coverage < ANNOTATED_REVIEW_COVERAGE_THRESHOLD:
+        return True, 'tracking_low_coverage'
+
+    if int(possible_highlights or 0) > 0:
+        return True, 'highlight_review'
+
+    if outcome in ANNOTATED_REVIEW_OUTCOMES:
+        return True, 'risk_review'
+
+    return False, None
+
 def save_task_metadata(task_id, metadata):
     metadata_path = os.path.join(TASK_METADATA_FOLDER, f'{task_id}.json')
     with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
         json.dump(metadata, metadata_file, ensure_ascii=False, indent=2)
     return metadata_path
+
+
+def get_task_state_path(task_id):
+    return os.path.join(TASK_METADATA_FOLDER, f'{task_id}.json')
+
+
+def persist_task_state(task_id):
+    task = processing_tasks.get(task_id)
+    if not task:
+        return None
+
+    metadata_path = task.get('metadata_path') or get_task_state_path(task_id)
+    task['metadata_path'] = metadata_path
+    payload = {'taskId': task_id}
+    for field in PERSISTED_TASK_FIELDS:
+        if field in task:
+            if field == 'result':
+                payload[field] = normalize_result_payload(task.get(field))
+            else:
+                payload[field] = task.get(field)
+
+    temp_path = f'{metadata_path}.tmp'
+    with open(temp_path, 'w', encoding='utf-8') as metadata_file:
+        json.dump(payload, metadata_file, ensure_ascii=False, indent=2)
+    os.replace(temp_path, metadata_path)
+    return metadata_path
+
+
+def delete_task_state(task_id):
+    metadata_path = get_task_state_path(task_id)
+    if os.path.exists(metadata_path):
+        os.remove(metadata_path)
+
+
+def _coerce_task_timestamp(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).timestamp()
+        except ValueError:
+            return None
+
+    return None
+
+
+def _format_task_timestamp(value):
+    timestamp = _coerce_task_timestamp(value)
+    if timestamp is None:
+        return None
+
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _resolve_detection_progress(current_frame, total_frames, attempt_index, previous_progress=10):
+    if total_frames <= 0:
+        return int(previous_progress)
+
+    safe_attempt_index = max(int(attempt_index or 1), 1)
+    range_index = min(safe_attempt_index - 1, len(DETECTION_PROGRESS_ATTEMPT_RANGES) - 1)
+    range_start, range_end = DETECTION_PROGRESS_ATTEMPT_RANGES[range_index]
+    normalized = min(max(float(current_frame) / float(total_frames), 0.0), 1.0)
+    span = max(range_end - range_start, 0)
+    progress = range_start + int(normalized * span)
+    return min(max(progress, int(previous_progress)), DETECTION_PROGRESS_ATTEMPT_RANGES[-1][1])
+
+
+def build_detection_progress_callback(task_id):
+    state = {
+        'attempt_index': 1,
+        'last_frame': -1,
+        'max_progress': DETECTION_PROGRESS_ATTEMPT_RANGES[0][0],
+    }
+
+    def progress_callback(current_frame, total_frames):
+        if task_id not in processing_tasks:
+            return
+
+        if state['last_frame'] >= 0 and current_frame < state['last_frame']:
+            state['attempt_index'] += 1
+
+        state['last_frame'] = int(current_frame)
+        progress = _resolve_detection_progress(
+            current_frame=current_frame,
+            total_frames=total_frames,
+            attempt_index=state['attempt_index'],
+            previous_progress=state['max_progress'],
+        )
+        state['max_progress'] = progress
+
+        if state['attempt_index'] > 1:
+            stage = (
+                f'正在自动补跑分析... '
+                f'(第 {state["attempt_index"]} 轮 {current_frame}/{total_frames})'
+            )
+        else:
+            stage = f'正在分析视频... ({current_frame}/{total_frames})'
+
+        update_task_progress(task_id, progress=progress, stage=stage)
+
+    return progress_callback
+
+
+LEGACY_RESULT_TEXT_REPLACEMENTS = (
+    ('待确认候选', '系统补充候选'),
+    ('待确认回合', '系统补充回合'),
+    ('待确认片段', '系统补充片段'),
+)
+CONFIRMED_HIGHLIGHT_ROLES = {'score', 'assist'}
+
+
+def _normalize_legacy_result_payload(value):
+    if isinstance(value, str):
+        normalized = value
+        for legacy_text, replacement in LEGACY_RESULT_TEXT_REPLACEMENTS:
+            normalized = normalized.replace(legacy_text, replacement)
+        return normalized
+
+    if isinstance(value, list):
+        return [_normalize_legacy_result_payload(item) for item in value]
+
+    if isinstance(value, dict):
+        return {
+            key: _normalize_legacy_result_payload(item)
+            for key, item in value.items()
+        }
+
+    return value
+
+
+def _coerce_result_int(value):
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
+def _merge_unique_dict_items(items, identity_builder):
+    merged = []
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        identity = identity_builder(item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        merged.append(item)
+    return merged
+
+
+def _clip_identity(clip):
+    return (
+        str(clip.get('filename') or ''),
+        _coerce_result_int(clip.get('index')),
+        str(clip.get('highlightRole') or ''),
+    )
+
+
+def _timestamp_identity(timestamp):
+    return (
+        _coerce_result_int(timestamp.get('frame')),
+        round(float(timestamp.get('timestamp') or 0.0), 3),
+        str(timestamp.get('highlight_role') or ''),
+    )
+
+
+def _split_highlight_dicts(items, role_key):
+    confirmed_items = []
+    debug_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get(role_key) or '')
+        if role == 'possible':
+            debug_items.append(item)
+        else:
+            confirmed_items.append(item)
+    return confirmed_items, debug_items
+
+
+def _count_role(items, role_key, role):
+    return sum(1 for item in items if str(item.get(role_key) or '') == role)
+
+
+def _normalize_result_delivery_payload(value):
+    if not isinstance(value, dict):
+        return value
+
+    normalized = dict(value)
+
+    raw_clips = normalized.get('clips') if isinstance(normalized.get('clips'), list) else []
+    existing_debug_clips = (
+        normalized.get('debugClips')
+        if isinstance(normalized.get('debugClips'), list)
+        else []
+    )
+    confirmed_clips, split_debug_clips = _split_highlight_dicts(raw_clips, 'highlightRole')
+    debug_clips = _merge_unique_dict_items(
+        [*existing_debug_clips, *split_debug_clips],
+        _clip_identity,
+    )
+    normalized['clips'] = confirmed_clips
+    normalized['debugClips'] = debug_clips
+
+    raw_timestamps = normalized.get('timestamps') if isinstance(normalized.get('timestamps'), list) else []
+    existing_debug_timestamps = (
+        normalized.get('debugTimestamps')
+        if isinstance(normalized.get('debugTimestamps'), list)
+        else []
+    )
+    confirmed_timestamps, split_debug_timestamps = _split_highlight_dicts(raw_timestamps, 'highlight_role')
+    debug_timestamps = _merge_unique_dict_items(
+        [*existing_debug_timestamps, *split_debug_timestamps],
+        _timestamp_identity,
+    )
+    normalized['timestamps'] = confirmed_timestamps
+    normalized['debugTimestamps'] = debug_timestamps
+
+    confirmed_scores = max(
+        _coerce_result_int(normalized.get('targetScores')),
+        _count_role(confirmed_clips, 'highlightRole', 'score'),
+        _count_role(confirmed_timestamps, 'highlight_role', 'score'),
+    )
+    confirmed_assists = max(
+        _coerce_result_int(normalized.get('targetAssists')),
+        _count_role(confirmed_clips, 'highlightRole', 'assist'),
+        _count_role(confirmed_timestamps, 'highlight_role', 'assist'),
+    )
+    confirmed_highlights = max(
+        _coerce_result_int(normalized.get('targetHighlights')),
+        confirmed_scores + confirmed_assists,
+        len(confirmed_clips),
+        len(confirmed_timestamps),
+    )
+    possible_highlights = max(
+        _coerce_result_int(normalized.get('possibleHighlights')),
+        _coerce_result_int(normalized.get('reviewCandidateHighlights')),
+        len(debug_clips),
+        len(debug_timestamps),
+    )
+
+    selection_summary = (
+        dict(normalized.get('selectionSummary'))
+        if isinstance(normalized.get('selectionSummary'), dict)
+        else {}
+    )
+    selection_summary['confirmed'] = max(
+        _coerce_result_int(selection_summary.get('confirmed')),
+        confirmed_highlights,
+    )
+    selection_summary['possible'] = max(
+        _coerce_result_int(selection_summary.get('possible')),
+        possible_highlights,
+    )
+    normalized['selectionSummary'] = selection_summary
+
+    normalized['targetScores'] = confirmed_scores
+    normalized['targetAssists'] = confirmed_assists
+    normalized['targetHighlights'] = selection_summary['confirmed']
+    normalized['relatedHighlights'] = selection_summary['confirmed']
+    normalized['possibleHighlights'] = selection_summary['possible']
+    normalized['reviewCandidateHighlights'] = max(
+        _coerce_result_int(normalized.get('reviewCandidateHighlights')),
+        selection_summary['possible'],
+    )
+
+    pipeline = dict(normalized.get('pipeline')) if isinstance(normalized.get('pipeline'), dict) else {}
+    attribution = dict(pipeline.get('attribution')) if isinstance(pipeline.get('attribution'), dict) else {}
+    attribution['confirmedHighlights'] = selection_summary['confirmed']
+    attribution['possibleHighlights'] = selection_summary['possible']
+    attribution['confirmedScores'] = confirmed_scores
+    attribution['confirmedAssists'] = confirmed_assists
+    pipeline['attribution'] = attribution
+
+    export = dict(pipeline.get('export')) if isinstance(pipeline.get('export'), dict) else {}
+    export['selectedClipCount'] = len(confirmed_clips)
+    export['selectedHighlights'] = selection_summary['confirmed']
+    export['scoreClips'] = confirmed_scores
+    export['assistClips'] = confirmed_assists
+    export['possibleClips'] = selection_summary['possible']
+    pipeline['export'] = export
+    normalized['pipeline'] = pipeline
+
+    return normalized
+
+
+def normalize_result_payload(value):
+    return _normalize_result_delivery_payload(_normalize_legacy_result_payload(value))
+
+
+def build_progress_response(task):
+    response = {
+        'progress': task.get('progress', 0),
+        'stage': task.get('stage', ''),
+        'status': task.get('status', 'failed'),
+        'completed': task.get('status') in TERMINAL_TASK_STATUSES,
+        'createdAt': _format_task_timestamp(task.get('created_at')),
+        'updatedAt': _format_task_timestamp(task.get('updated_at')),
+    }
+
+    if task.get('status') == 'completed' and task.get('result'):
+        normalized_result = normalize_result_payload(task.get('result'))
+        task_target_player_box = task.get('target_player_box')
+        if isinstance(task_target_player_box, dict):
+            existing_target_player_box = (
+                normalized_result.get('targetPlayerBox')
+                if isinstance(normalized_result.get('targetPlayerBox'), dict)
+                else None
+            )
+            if existing_target_player_box and existing_target_player_box != task_target_player_box:
+                normalized_result.setdefault('effectiveTargetPlayerBox', existing_target_player_box)
+            normalized_result['targetPlayerBox'] = task_target_player_box
+
+        response['result'] = normalized_result
+    elif task.get('status') == 'failed' and task.get('error'):
+        response['error'] = task.get('error')
+
+    return response
+
+
+def _build_task_from_payload(task_id, payload):
+    created_at = _coerce_task_timestamp(payload.get('created_at'))
+    if created_at is None:
+        created_at = _coerce_task_timestamp(payload.get('createdAt'))
+
+    updated_at = _coerce_task_timestamp(payload.get('updated_at'))
+    if updated_at is None:
+        updated_at = created_at
+
+    task = {
+        'status': payload.get('status', 'failed'),
+        'progress': payload.get('progress', 0),
+        'stage': payload.get('stage', '任务状态未知'),
+        'result': normalize_result_payload(payload.get('result')),
+        'error': payload.get('error'),
+        'created_at': created_at if created_at is not None else time.time(),
+        'updated_at': updated_at if updated_at is not None else time.time(),
+        'file_id': payload.get('file_id', payload.get('fileId')),
+        'input_path': payload.get('input_path'),
+        'before_seconds': payload.get('before_seconds', payload.get('beforeSeconds')),
+        'after_seconds': payload.get('after_seconds', payload.get('afterSeconds')),
+        'target_player_box': payload.get('target_player_box', payload.get('targetPlayerBox')),
+        'effective_target_player_box': payload.get(
+            'effective_target_player_box',
+            payload.get('effectiveTargetPlayerBox'),
+        ),
+        'metadata_path': get_task_state_path(task_id),
+    }
+    return task
+
+
+def load_persisted_task(task_id, mark_incomplete_as_failed=True):
+    metadata_path = get_task_state_path(task_id)
+    if not os.path.exists(metadata_path):
+        return None
+
+    with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
+        payload = json.load(metadata_file)
+
+    task = _build_task_from_payload(task_id, payload if isinstance(payload, dict) else {})
+    persisted_status = task.get('status')
+
+    if mark_incomplete_as_failed and persisted_status not in TERMINAL_TASK_STATUSES:
+        task['status'] = 'failed'
+        task['stage'] = '处理已中断'
+        task['error'] = '服务已重启，未完成的本地处理任务已中断，请重新发起处理'
+        task['updated_at'] = time.time()
+
+    processing_tasks[task_id] = task
+
+    if (
+        mark_incomplete_as_failed
+        and persisted_status not in TERMINAL_TASK_STATUSES
+    ):
+        persist_task_state(task_id)
+
+    return task
+
+
+def get_task(task_id, load_if_missing=True):
+    task = processing_tasks.get(task_id)
+    if task or not load_if_missing:
+        return task
+    return load_persisted_task(task_id)
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
@@ -347,8 +1175,8 @@ def process_video():
             }), 400
         
         file_id = data['fileId']
-        before_seconds = data.get('beforeSeconds', 3)
-        after_seconds = data.get('afterSeconds', 1)
+        before_seconds = data.get('beforeSeconds', DEFAULT_CLIP_BEFORE_SECONDS)
+        after_seconds = data.get('afterSeconds', DEFAULT_CLIP_AFTER_SECONDS)
         target_player_box = validate_target_player_box(data.get('targetPlayerBox'))
         
         # 验证参数
@@ -364,17 +1192,17 @@ def process_video():
                 'error': '进球后保留时间必须在1-10秒之间'
             }), 400
         
-        # 查找上传的文件
-        uploaded_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) if f.startswith(file_id)]
-        
-        if not uploaded_files:
+        uploaded_file_path = find_uploaded_file_path(file_id)
+        uploaded_filename = os.path.basename(uploaded_file_path) if uploaded_file_path else None
+
+        if not uploaded_file_path or not uploaded_filename:
             logger.warning(f"找不到文件ID对应的文件: {file_id}")
             return jsonify({
                 'success': False,
                 'error': '找不到上传的文件'
             }), 404
-        
-        input_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_files[0])
+
+        input_path = uploaded_file_path
         
         # 验证文件是否存在且可读
         if not os.path.exists(input_path) or not os.access(input_path, os.R_OK):
@@ -396,7 +1224,7 @@ def process_video():
         }
         metadata_path = save_task_metadata(task_id, task_metadata)
         
-        logger.info(f"创建处理任务: {task_id}, 文件: {uploaded_files[0]}, 参数: before={before_seconds}s, after={after_seconds}s")
+        logger.info(f"创建处理任务: {task_id}, 文件: {uploaded_filename}, 参数: before={before_seconds}s, after={after_seconds}s")
         
         # 初始化任务状态
         processing_tasks[task_id] = {
@@ -414,6 +1242,7 @@ def process_video():
             'target_player_box': target_player_box,
             'metadata_path': metadata_path,
         }
+        persist_task_state(task_id)
         
         # 启动后台处理线程
         thread = threading.Thread(
@@ -438,16 +1267,21 @@ def process_video():
 
 def update_task_progress(task_id, **kwargs):
     """更新任务进度的辅助函数"""
-    if task_id in processing_tasks:
-        processing_tasks[task_id].update(kwargs)
-        processing_tasks[task_id]['updated_at'] = time.time()
+    task = get_task(task_id, load_if_missing=False)
+    if task is not None:
+        normalized_updates = {
+            key: normalize_result_payload(value) if key == 'result' else value
+            for key, value in kwargs.items()
+            if key != 'log'
+        }
+        task.update(normalized_updates)
+        task['updated_at'] = time.time()
         logger.info(f"任务 {task_id} 进度更新: {kwargs}")
-        
+        persist_task_state(task_id)
+
         # 通过WebSocket发送进度更新
         try:
-            task_data = processing_tasks[task_id].copy()
-            # 添加完成状态标记
-            task_data['completed'] = task_data['status'] in ['completed', 'failed']
+            task_data = build_progress_response(task)
             # 如果此次更新包含即时日志，不持久化但在事件中携带
             if 'log' in kwargs:
                 task_data['log'] = kwargs['log']
@@ -483,18 +1317,13 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         target_player_box = task.get('target_player_box')
         
         # 进度回调函数
-        def progress_callback(current_frame, total_frames):
-            if task_id in processing_tasks:
-                progress = 10 + int((current_frame / total_frames) * 60)  # 10-70%
-                update_task_progress(task_id,
-                    progress=progress,
-                    stage=f'正在分析视频... ({current_frame}/{total_frames})'
-                )
+        progress_callback = build_detection_progress_callback(task_id)
         
         # 检测进球
         logger.info(f"开始检测进球，文件: {input_path}")
         annotated_output_path = None
-        if DEBUG_KEEP_ARTIFACTS:
+        annotate_video = should_generate_annotated_video(target_player_box)
+        if annotate_video:
             annotated_filename = f"{task_id}_annotated.mp4"
             annotated_output_path = os.path.join(app.config['OUTPUT_FOLDER'], annotated_filename)
 
@@ -503,40 +1332,95 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
             before_seconds=before_seconds,
             after_seconds=after_seconds,
             progress_callback=progress_callback,
-            annotate=DEBUG_KEEP_ARTIFACTS,
+            annotate=annotate_video,
             annotated_output_path=annotated_output_path,
             target_player_box=target_player_box,
         )
+        update_task_progress(
+            task_id,
+            status='attributing',
+            progress=72,
+            stage='正在归因目标球员并整理相关片段...',
+        )
 
-        selected_made_shots = result.get('selected_made_shots', result.get('made_shots', []))
+        selected_shots = result.get('selected_shots', result.get('selected_made_shots', result.get('made_shots', [])))
+        confirmed_shots, debug_shots = _split_highlight_dicts(selected_shots, 'highlight_role')
         tracking_summary = result.get('tracking', {'enabled': False})
         target_scores = result['stats'].get('target_scores', 0)
         target_assists = result['stats'].get('target_assists', 0)
         target_highlights = result['stats'].get('target_highlights', target_scores + target_assists)
+        possible_highlights = result['stats'].get('possible_highlights', 0)
+        related_highlights = result['stats'].get('related_highlights', len(confirmed_shots))
+        review_candidate_highlights = result['stats'].get('review_candidate_highlights', 0)
+        selection_summary = result.get('selection_summary', {})
+        diagnostics = result.get('diagnostics', {})
+        pipeline_summary = result.get('pipeline', {})
+        auto_retry = result.get('auto_retry')
+        effective_target_player_box = result.get('target_player_box') or target_player_box
+        if effective_target_player_box != target_player_box:
+            update_task_progress(task_id, effective_target_player_box=effective_target_player_box)
+        keep_annotated_video, annotated_video_reason = should_keep_annotated_video(
+            target_player_box=effective_target_player_box,
+            diagnostics=diagnostics,
+            tracking_summary=tracking_summary,
+            possible_highlights=possible_highlights,
+        )
+        annotated_video_path = result.get('annotated_video')
+        if annotated_video_path and not keep_annotated_video:
+            try:
+                if os.path.exists(annotated_video_path):
+                    os.remove(annotated_video_path)
+                    logger.info(f"删除无需保留的标注视频: {annotated_video_path}")
+            except OSError as error:
+                logger.warning(f"删除标注视频失败: {annotated_video_path}, error={error}")
+            finally:
+                annotated_video_path = None
+                result['annotated_video'] = None
+
+        annotated_video_filename = (
+            os.path.basename(annotated_video_path)
+            if annotated_video_path
+            else None
+        )
         debug_result = {
             'debugArtifactsKept': DEBUG_KEEP_ARTIFACTS,
         }
         if DEBUG_KEEP_ARTIFACTS:
             debug_result['allShots'] = result.get('shots', [])
-            debug_result['annotatedVideo'] = (
-                os.path.basename(result['annotated_video'])
-                if result.get('annotated_video')
-                else None
-            )
+        if annotated_video_filename:
+            debug_result['annotatedVideoReason'] = annotated_video_reason
 
-        if selected_made_shots:
-            for i, t in enumerate(selected_made_shots, start=1):
+        if selected_shots:
+            selected_shot_lookup = {
+                (
+                    int(shot.get('frame') or 0),
+                    round(float(shot.get('timestamp') or 0.0), 3),
+                ): shot
+                for shot in selected_shots
+            }
+            for i, t in enumerate(selected_shots, start=1):
                 try:
                     role = t.get('highlight_role')
-                    role_label = '你的进球' if role == 'score' else '你的助攻' if role == 'assist' else '个人高光'
+                    role_label = (
+                        '目标球员进球'
+                        if role == 'score'
+                        else '目标球员助攻'
+                        if role == 'assist'
+                        else '系统补充片段'
+                    )
                     msg = (
                         f"检测到高光 #{i} - 帧: {t['frame']}, 时间: {float(t['timestamp']):.2f}s, {role_label}"
                     )
                     update_task_progress(task_id, log=msg)
                 except Exception:
                     pass
+            if review_candidate_highlights > 0 and target_highlights == 0:
+                update_task_progress(
+                    task_id,
+                    log=f"当前没有确认到目标球员进球或助攻，已额外保留 {review_candidate_highlights} 个系统补充回合供你快速检查",
+                )
         elif target_player_box and result.get('made_shots'):
-            update_task_progress(task_id, log='检测到进球，但未归因到你的进球或助攻')
+            update_task_progress(task_id, log='检测到全场进球，当前正在尽量保留可能与目标球员相关的片段')
         
         logger.info(f"检测完成，结果: 总投篮 {result['stats']['total_attempts']}, 进球 {result['stats']['total_makes']}, 命中率 {result['stats']['accuracy']:.1f}%")
         
@@ -552,32 +1436,92 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
         
         # 处理视频：生成集锦
-        processor = VideoProcessor()
+        task_temp_dir = os.path.join(app.config['TEMP_FOLDER'], task_id)
+        processor = VideoProcessor(temp_dir=task_temp_dir)
         
-        if selected_made_shots:
+        if selected_shots:
             # 有进球，生成集锦
-            logger.info(f"生成集锦视频，片段数量: {len(selected_made_shots)}")
+            logger.info(f"生成集锦视频，片段数量: {len(selected_shots)}")
             # 集锦始终从原视频剪辑，保留原始音频；标注视频仅用于调试。
             source_video_for_clips = input_path
+            has_confirmed_highlights = any(
+                str(shot.get('highlight_role') or '') in {'score', 'assist'}
+                for shot in selected_shots
+            )
             video_result = processor.process_video_full_pipeline(
                 video_path=source_video_for_clips,
-                timestamps=selected_made_shots,
+                timestamps=selected_shots,
                 output_path=output_path,
                 before=before_seconds,
                 after=after_seconds,
-                log_callback=lambda m: update_task_progress(task_id, log=m)
+                log_callback=lambda m: update_task_progress(task_id, log=m),
+                clip_output_dir=app.config['OUTPUT_FOLDER'],
+                clip_filename_prefix=f"{task_id}_clip",
+                keep_clips=True,
             )
             
             if not video_result['success']:
                 raise Exception(video_result['error'])
+
+            highlight_output_path = video_result.get('output_file')
+            if has_confirmed_highlights:
+                if not highlight_output_path or not os.path.exists(highlight_output_path):
+                    raise Exception("已确认片段拼接视频生成失败，输出文件不存在")
+                file_size = os.path.getsize(highlight_output_path)
+                output_filename = os.path.basename(highlight_output_path)
+                logger.info(f"集锦视频生成成功: {highlight_output_path}, 大小: {file_size / (1024*1024):.1f}MB")
+            else:
+                output_filename = None
+                file_size = 0
+                logger.info("当前没有已确认的进球或助攻片段，仅导出独立片段供验收")
+
+            clip_segments = [
+                {
+                    'filename': clip['filename'],
+                    'index': clip['index'],
+                    'start': clip['start'],
+                    'end': clip['end'],
+                    'duration': clip['duration'],
+                    'shotFrame': clip['shot_frame'],
+                    'shotTimestamp': clip['shot_timestamp'],
+                    'highlightRole': clip['highlight_role'],
+                    'candidateReason': clip.get('candidate_reason'),
+                    'candidateSource': clip.get('candidate_source')
+                    or selected_shot_lookup.get(
+                        (
+                            int(clip.get('shot_frame') or 0),
+                            round(float(clip.get('shot_timestamp') or 0.0), 3),
+                        ),
+                        {},
+                    ).get('candidate_source'),
+                    'highlightConfidence': clip.get('highlight_confidence')
+                    or selected_shot_lookup.get(
+                        (
+                            int(clip.get('shot_frame') or 0),
+                            round(float(clip.get('shot_timestamp') or 0.0), 3),
+                        ),
+                        {},
+                    ).get('highlight_confidence'),
+                }
+                for clip in video_result.get('clips', [])
+            ]
+            confirmed_clips, debug_clips = _split_highlight_dicts(clip_segments, 'highlightRole')
             
-            # 验证输出文件
-            if not os.path.exists(output_path):
-                raise Exception("集锦视频生成失败，输出文件不存在")
-            
-            file_size = os.path.getsize(output_path)
-            logger.info(f"集锦视频生成成功: {output_path}, 大小: {file_size / (1024*1024):.1f}MB")
-            
+            confirmed_clip_count = len(confirmed_clips)
+            debug_clip_count = len(debug_clips)
+
+            if debug_clip_count > 0 and target_highlights == 0:
+                result_message = (
+                    f"当前还没有确认到目标球员进球或助攻。系统已把 {debug_clip_count} 个系统补充回合放到高级排错区，供你按需检查。"
+                )
+            elif debug_clip_count == 0:
+                result_message = f"已自动导出 {confirmed_clip_count} 个已确认片段。"
+            else:
+                result_message = (
+                    f"已自动导出 {confirmed_clip_count} 个已确认片段。另有 {debug_clip_count} 个系统补充回合已移入高级排错区，只有怀疑漏剪时再看。"
+                )
+            completed_at_iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
             # 更新状态：完成
             update_task_progress(task_id,
                 status='completed',
@@ -591,25 +1535,41 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'targetScores': target_scores,
                     'targetAssists': target_assists,
                     'targetHighlights': target_highlights,
+                    'possibleHighlights': debug_clip_count,
+                    'relatedHighlights': confirmed_clip_count,
+                    'reviewCandidateHighlights': review_candidate_highlights,
                     'highlightVideo': output_filename,
-                    'annotatedVideo': os.path.basename(result['annotated_video']) if result.get('annotated_video') else None,
-                    'timestamps': selected_made_shots,
+                    'annotatedVideo': annotated_video_filename,
+                    'timestamps': confirmed_shots,
+                    'debugTimestamps': debug_shots,
                     'allMadeTimestamps': result['made_shots'],
+                    'clips': confirmed_clips,
+                    'debugClips': debug_clips,
                     'fileSize': file_size,
                     'targetPlayerBox': target_player_box,
+                    'effectiveTargetPlayerBox': effective_target_player_box,
                     'tracking': tracking_summary,
+                    'message': result_message,
+                    'selectionSummary': selection_summary,
+                    'diagnostics': diagnostics,
+                    'pipeline': pipeline_summary,
+                    'autoRetry': auto_retry,
+                    'completed_at': completed_at_iso,
                     **debug_result,
                 }
             )
         else:
             # 没有检测到进球
-            logger.info("未检测到可用于集锦的个人高光")
+            logger.info("未检测到可用于集锦的相关片段")
             message = '未检测到进球，请检查视频内容或调整参数'
             if target_player_box:
                 if result['made_shots']:
-                    message = '检测到全场进球，但当前规则未将其归因到你的进球或助攻，请检查选区或人物出场时机'
+                    message = '检测到全场进球，但当前还没有锁定与目标球员相关的片段，请检查框选时机或人物清晰度'
                 else:
                     message = '人物跟踪正常，但当前未识别出全场进球，请检查机位、清晰度或进球识别规则'
+            if diagnostics.get('summary'):
+                message = diagnostics['summary']
+            completed_at_iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             update_task_progress(task_id,
                 status='completed',
                 progress=100,
@@ -622,26 +1582,33 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
                     'targetScores': target_scores,
                     'targetAssists': target_assists,
                     'targetHighlights': target_highlights,
+                    'possibleHighlights': possible_highlights,
+                    'relatedHighlights': len(confirmed_shots),
+                    'reviewCandidateHighlights': review_candidate_highlights,
                     'highlightVideo': None,
-                    'annotatedVideo': os.path.basename(result['annotated_video']) if result.get('annotated_video') else None,
+                    'annotatedVideo': annotated_video_filename,
                     'message': message,
                     'targetPlayerBox': target_player_box,
                     'tracking': tracking_summary,
-                    'timestamps': selected_made_shots,
+                    'timestamps': confirmed_shots,
+                    'debugTimestamps': debug_shots,
                     'allMadeTimestamps': result['made_shots'],
+                    'clips': [],
+                    'debugClips': [],
+                    'selectionSummary': selection_summary,
+                    'effectiveTargetPlayerBox': effective_target_player_box,
+                    'diagnostics': diagnostics,
+                    'pipeline': pipeline_summary,
+                    'autoRetry': auto_retry,
+                    'completed_at': completed_at_iso,
                     **debug_result,
                 }
             )
 
-        # 清理上传的文件
         if DEBUG_KEEP_ARTIFACTS:
             logger.info("DEBUG_KEEP_ARTIFACTS 已开启，保留上传文件用于排查")
         else:
-            try:
-                os.remove(input_path)
-                logger.info(f"清理上传文件: {input_path}")
-            except Exception as e:
-                logger.warning(f"清理上传文件失败: {e}")
+            logger.info("保留上传文件，支持后续重新框选并重跑")
             
     except Exception as e:
         # 处理错误
@@ -659,34 +1626,46 @@ def get_progress(task_id):
     """获取处理进度"""
     
     try:
-        if task_id not in processing_tasks:
+        task = get_task(task_id)
+        if task is None:
             logger.warning(f"查询不存在的任务: {task_id}")
             return jsonify({
                 'success': False,
                 'error': '任务不存在'
             }), 404
-        
-        task = processing_tasks[task_id]
-        
-        response = {
-            'progress': task['progress'],
-            'stage': task['stage'],
-            'status': task['status'],
-            'completed': task['status'] in ['completed', 'failed']
-        }
-        
-        if task['status'] == 'completed' and task['result']:
-            response['result'] = task['result']
-        elif task['status'] == 'failed' and task['error']:
-            response['error'] = task['error']
-        
-        return jsonify(response)
+
+        return jsonify(build_progress_response(task))
     
     except Exception as e:
         logger.error(f"获取任务进度失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': '获取进度失败'
+        }), 500
+
+
+@app.route('/api/upload/candidates/<file_id>', methods=['GET'])
+def get_upload_selection_candidates(file_id):
+    """为已上传视频生成智能推荐截图，前端本地候选仍可作为兜底。"""
+    try:
+        if not file_id:
+            return jsonify({'success': False, 'error': '缺少 fileId'}), 400
+
+        input_path = find_uploaded_file_path(file_id)
+        if not input_path or not os.path.exists(input_path):
+            return jsonify({'success': False, 'error': '找不到上传的文件'}), 404
+
+        candidates = build_selection_frame_candidates(file_id, input_path)
+        return jsonify({
+            'success': True,
+            'fileId': file_id,
+            'candidateFrames': candidates,
+        })
+    except Exception as error:
+        logger.error(f"生成智能推荐截图失败: file_id={file_id}, error={error}")
+        return jsonify({
+            'success': False,
+            'error': '生成智能推荐截图失败',
         }), 500
 
 @app.route('/api/download/<filename>', methods=['GET'])
@@ -726,6 +1705,175 @@ def download_video(filename):
             'error': '下载失败'
         }), 500
 
+@app.route('/api/download/clips/<task_id>', methods=['POST'])
+def download_selected_clips(task_id):
+    """将用户选择的高光片段打包下载。"""
+    try:
+        task = get_task(task_id)
+        if not task or task.get('status') != 'completed' or not task.get('result'):
+            return jsonify({'success': False, 'error': '任务结果不存在'}), 404
+
+        normalized_result = normalize_result_payload(task.get('result') or {})
+        confirmed_clips = normalized_result.get('clips', [])
+        debug_clips = normalized_result.get('debugClips', [])
+
+        data = request.get_json(silent=True) or {}
+        requested_filenames = data.get('filenames')
+        archive_scope = str(data.get('scope') or '').strip().lower()
+
+        if isinstance(requested_filenames, list) and requested_filenames:
+            requested_set = {
+                filename for filename in requested_filenames
+                if isinstance(filename, str)
+            }
+            clip_pool = [*confirmed_clips, *debug_clips]
+            selected_clips = [
+                clip for clip in clip_pool
+                if clip.get('filename') in requested_set
+            ]
+        elif archive_scope == 'debug':
+            selected_clips = list(debug_clips)
+        elif archive_scope == 'all':
+            selected_clips = [*confirmed_clips, *debug_clips]
+        else:
+            selected_clips = list(confirmed_clips)
+
+        if not selected_clips:
+            return jsonify({'success': False, 'error': '所选片段不存在'}), 404
+
+        archive_buffer = io.BytesIO()
+        archived_count = 0
+        archive_group_counts = {
+            'score': 0,
+            'assist': 0,
+            'review': 0,
+            'other': 0,
+        }
+        manifest_clips = []
+        with zipfile.ZipFile(archive_buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
+            for clip in selected_clips:
+                filename = clip['filename']
+                file_path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
+                if not os.path.exists(file_path):
+                    continue
+
+                highlight_role = str(clip.get('highlightRole') or 'other')
+                if highlight_role == 'score':
+                    archive_group = 'score'
+                    archive_filename = f"score_{int(clip.get('index', 0)):03d}.mp4"
+                elif highlight_role == 'assist':
+                    archive_group = 'assist'
+                    archive_filename = f"assist_{int(clip.get('index', 0)):03d}.mp4"
+                elif highlight_role == 'possible':
+                    archive_group = 'review'
+                    archive_filename = f"review_{int(clip.get('index', 0)):03d}.mp4"
+                else:
+                    archive_group = 'other'
+                    archive_filename = f"clip_{int(clip.get('index', 0)):03d}.mp4"
+
+                archive_name = f"{archive_group}/{archive_filename}"
+                archive.write(file_path, arcname=archive_name)
+                manifest_clips.append({
+                    'archiveName': archive_name,
+                    'archiveGroup': archive_group,
+                    'filename': filename,
+                    'index': int(clip.get('index', 0) or 0),
+                    'start': clip.get('start'),
+                    'end': clip.get('end'),
+                    'duration': clip.get('duration'),
+                    'shotFrame': clip.get('shotFrame'),
+                    'shotTimestamp': clip.get('shotTimestamp'),
+                    'highlightRole': clip.get('highlightRole'),
+                    'candidateReason': clip.get('candidateReason'),
+                    'candidateSource': clip.get('candidateSource'),
+                    'highlightConfidence': clip.get('highlightConfidence'),
+                })
+                archived_count += 1
+                archive_group_counts[archive_group] = archive_group_counts.get(archive_group, 0) + 1
+
+            manifest_scope = (
+                'confirmed'
+                if archive_group_counts['review'] == 0
+                else 'debug'
+                if archive_group_counts['score'] == 0 and archive_group_counts['assist'] == 0
+                else 'mixed'
+            )
+            manifest = {
+                'taskId': task_id,
+                'exportedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                'archiveScope': manifest_scope,
+                'selectedClipCount': archived_count,
+                'clipGroups': archive_group_counts,
+                'selectionSummary': normalized_result.get('selectionSummary'),
+                'diagnostics': normalized_result.get('diagnostics'),
+                'pipeline': normalized_result.get('pipeline'),
+                'autoRetry': normalized_result.get('autoRetry'),
+                'clips': manifest_clips,
+            }
+            archive.writestr(
+                'manifest.json',
+                json.dumps(manifest, ensure_ascii=False, indent=2),
+            )
+
+        if archived_count == 0:
+            return jsonify({'success': False, 'error': '所选片段文件不存在'}), 404
+
+        archive_buffer.seek(0)
+        return send_file(
+            archive_buffer,
+            as_attachment=True,
+            download_name=f"hoopcut_related_clips_{task_id}.zip",
+            mimetype='application/zip',
+        )
+    except Exception as e:
+        logger.error(f"片段打包下载失败: {str(e)}")
+        return jsonify({'success': False, 'error': '片段打包下载失败'}), 500
+
+
+@app.route('/api/tasks/<task_id>/source', methods=['GET'])
+def get_task_source(task_id):
+    """获取任务对应的可复用源视频信息。"""
+    try:
+        task = get_task(task_id)
+        if task is None:
+            return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+        payload = build_task_source_payload(task_id, task)
+        return jsonify({
+            'success': True,
+            **payload,
+        })
+    except FileNotFoundError as error:
+        logger.warning(f"任务源视频不存在: task_id={task_id}, error={error}")
+        return jsonify({'success': False, 'error': str(error)}), 404
+    except Exception as error:
+        logger.error(f"获取任务源视频失败: task_id={task_id}, error={error}")
+        return jsonify({'success': False, 'error': '获取任务源视频失败'}), 500
+
+
+@app.route('/api/tasks/<task_id>/source/stream', methods=['GET'])
+def stream_task_source(task_id):
+    """流式返回任务原始上传视频，用于重新框选并重跑。"""
+    try:
+        task = get_task(task_id)
+        if task is None:
+            return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+        input_path = resolve_task_input_path(task)
+        if not input_path or not os.path.exists(input_path):
+            return jsonify({'success': False, 'error': '源视频文件不存在'}), 404
+
+        filename = get_original_upload_filename(task.get('file_id'), input_path)
+        return send_file(
+            input_path,
+            as_attachment=False,
+            mimetype=guess_video_mime_type(filename),
+            conditional=True,
+        )
+    except Exception as error:
+        logger.error(f"源视频流媒体传输失败: task_id={task_id}, error={error}")
+        return jsonify({'success': False, 'error': '源视频流媒体传输失败'}), 500
+
 @app.route('/api/stream/<filename>', methods=['GET'])
 def stream_video(filename):
     try:
@@ -747,14 +1895,25 @@ def health_check():
         # 检查关键组件
         health_status = {
             'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             'message': '篮球集锦生成服务运行正常',
             'components': {
                 'upload_folder': os.path.exists(UPLOAD_FOLDER),
                 'output_folder': os.path.exists(OUTPUT_FOLDER),
                 'model_file': os.path.exists(MODEL_PATH),
                 'active_tasks': len(processing_tasks)
-            }
+            },
+            'runtime': {
+                'apiVersion': API_RUNTIME_VERSION,
+                'backendHost': BACKEND_HOST,
+                'backendPort': BACKEND_PORT,
+                'frontendPort': FRONTEND_PORT,
+                'startedAt': SERVER_STARTED_AT.isoformat().replace('+00:00', 'Z'),
+                'supports': {
+                    'uploadCandidates': True,
+                    'scopedClipArchive': True,
+                },
+            },
         }
         
         # 检查是否有组件异常
@@ -781,15 +1940,63 @@ def cleanup_old_tasks():
     """清理保留期已过的已结束任务，运行中的长任务不参与清理。"""
     try:
         current_time = time.time()
-        expired_tasks = [
-            task_id for task_id, task in list(processing_tasks.items())
-            if task.get('status') in {'completed', 'failed'}
+        all_tasks = {
+            task_id: dict(task)
+            for task_id, task in processing_tasks.items()
+        }
+        expired_tasks = set(
+            task_id for task_id, task in all_tasks.items()
+            if task.get('status') in TERMINAL_TASK_STATUSES
             and current_time - task.get('updated_at', task.get('created_at', current_time)) > TASK_RETENTION_SECONDS
-        ]
+        )
+
+        for filename in os.listdir(TASK_METADATA_FOLDER):
+            if not filename.endswith('.json'):
+                continue
+
+            task_id = filename[:-5]
+            if task_id in expired_tasks:
+                continue
+
+            metadata_path = os.path.join(TASK_METADATA_FOLDER, filename)
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
+                    payload = json.load(metadata_file)
+            except (OSError, json.JSONDecodeError) as error:
+                logger.warning(f"读取任务状态失败，跳过清理: {metadata_path}, error={error}")
+                continue
+
+            task = _build_task_from_payload(task_id, payload if isinstance(payload, dict) else {})
+            all_tasks.setdefault(task_id, task)
+            if task.get('status') not in TERMINAL_TASK_STATUSES:
+                continue
+
+            updated_at = task.get('updated_at', task.get('created_at', current_time))
+            if current_time - updated_at > TASK_RETENTION_SECONDS:
+                expired_tasks.add(task_id)
+
+        referenced_file_ids = {
+            task.get('file_id')
+            for task_id, task in all_tasks.items()
+            if task_id not in expired_tasks and task.get('file_id')
+        }
+        expired_file_ids = {
+            task.get('file_id')
+            for task_id, task in all_tasks.items()
+            if task_id in expired_tasks and task.get('file_id')
+        }
         
         for task_id in expired_tasks:
             if processing_tasks.pop(task_id, None) is not None:
                 logger.info(f"清理过期任务: {task_id}")
+            try:
+                delete_task_state(task_id)
+            except OSError as error:
+                logger.warning(f"删除任务状态文件失败: {task_id}, error={error}")
+
+        for file_id in expired_file_ids:
+            if file_id not in referenced_file_ids:
+                delete_uploaded_files(file_id)
         
         if expired_tasks:
             logger.info(f"清理了 {len(expired_tasks)} 个过期任务")

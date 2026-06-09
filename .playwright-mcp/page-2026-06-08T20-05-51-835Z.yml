@@ -1,0 +1,94 @@
+- main [ref=e3]:
+  - generic [ref=e8]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: H
+          - generic [ref=e16]:
+            - paragraph [ref=e17]: HoopCut
+            - paragraph [ref=e18]: 篮球个人高光自动剪辑
+        - generic [ref=e20]: 本地视频处理
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - generic [ref=e25]: AI 进球检测
+            - generic [ref=e27]: 人物追踪初始化
+            - generic [ref=e29]: 自动导出个人高光
+          - generic [ref=e30]:
+            - heading "把一整场比赛 压成目标球员的高光片。" [level=1] [ref=e31]:
+              - text: 把一整场比赛
+              - text: 压成目标球员的高光片。
+            - paragraph [ref=e32]: 上传一段完整比赛视频，先从系统给出的候选截图里选中目标球员，再框选这个人。HoopCut 会自动分析整段素材，并把和这个人相关的进球、助攻和补充片段一起切出来给你验收。
+          - generic [ref=e33]:
+            - button "立即上传视频" [ref=e34] [cursor=pointer]:
+              - generic [ref=e35]:
+                - text: 立即上传视频
+                - img
+            - generic [ref=e36]: 当前版本聚焦于单目标球员的相关片段提取，不做全队战术分析。
+        - generic [ref=e38]:
+          - generic [ref=e39]:
+            - generic [ref=e40]: 流程
+            - img [ref=e41]
+          - generic [ref=e44]:
+            - generic [ref=e45]:
+              - generic [ref=e46]: "01"
+              - generic [ref=e47]: 上传原始比赛视频
+              - generic [ref=e48]: 支持大文件，本地分块上传
+            - generic [ref=e49]:
+              - generic [ref=e50]: "02"
+              - generic [ref=e51]: 先选一张目标截图，再框选人物
+              - generic [ref=e52]: 优先选择目标球员最早且清晰的出镜画面
+            - generic [ref=e53]:
+              - generic [ref=e54]: "03"
+              - generic [ref=e55]: 自动分析并切出相关片段
+              - generic [ref=e56]: 结果页直接交付片段 ZIP，拼接视频只作补充
+      - generic [ref=e57]:
+        - generic [ref=e59]:
+          - img [ref=e61]
+          - generic [ref=e68]: 先锁定目标球员
+          - paragraph [ref=e69]: 不是泛泛识别比赛，而是先把目标人物定准，并自动补充参考画面。
+        - generic [ref=e71]:
+          - img [ref=e73]
+          - generic [ref=e77]: 只围绕目标来筛镜头
+          - paragraph [ref=e78]: 先锁定目标人物，再分析整段视频里的相关进球和助攻。
+        - generic [ref=e80]:
+          - img [ref=e82]
+          - generic [ref=e85]: 默认流程自动处理
+          - paragraph [ref=e86]: 上传、选人、开始处理，最后直接验收片段 ZIP。
+    - generic [ref=e88]:
+      - generic [ref=e90]:
+        - button "上传篮球视频 拖拽文件到这里，或点击选择本地比赛视频。上传后系统会先按整段时间轴自动给你候选截图，你只需要选一张最早且清晰的目标球员画面，再框选这个人。 自动检测投篮 个人高光剪辑 多格式兼容 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV，文件大小 1MB - 2GB" [active] [ref=e92]:
+          - img [ref=e95]
+          - generic [ref=e98]:
+            - heading "上传篮球视频" [level=3] [ref=e99]
+            - paragraph [ref=e100]: 拖拽文件到这里，或点击选择本地比赛视频。上传后系统会先按整段时间轴自动给你候选截图，你只需要选一张最早且清晰的目标球员画面，再框选这个人。
+          - generic [ref=e101]:
+            - generic [ref=e103]: 自动检测投篮
+            - generic [ref=e105]: 个人高光剪辑
+            - generic [ref=e107]: 多格式兼容
+          - generic [ref=e108]: 支持 MP4、AVI、MOV、WMV、FLV、WebM、MKV，文件大小 1MB - 2GB
+        - generic [ref=e131]:
+          - generic [ref=e132]: 文件大小不能小于 1MB
+          - button "关闭上传错误提示" [ref=e133]: ×
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - paragraph [ref=e113]: 开始前检查
+          - heading "开始自动剪辑" [level=2] [ref=e114]
+          - paragraph [ref=e115]: 当前版本会直接按默认策略自动处理，不需要你手动调参数。重点是把和目标球员相关的进球、助攻和系统补充片段一次性切出来。
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]: 视频已上传
+            - generic [ref=e119]: 未选择
+          - generic [ref=e120]:
+            - generic [ref=e121]: 框选起始帧已确认
+            - generic [ref=e122]: 待操作
+          - generic [ref=e123]:
+            - generic [ref=e124]: 目标球员已框选
+            - generic [ref=e125]: 等待上一步
+          - generic [ref=e126]:
+            - generic [ref=e127]: 自动切片策略
+            - generic [ref=e128]: 系统默认处理
+        - button "开始自动剪辑" [disabled]:
+          - generic:
+            - text: 开始自动剪辑
+            - img

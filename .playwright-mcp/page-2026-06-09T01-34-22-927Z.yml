@@ -1,0 +1,176 @@
+- main [ref=e3]:
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e17]: 片段结果已就绪
+          - generic [ref=e19]: 已确认片段 + 高级排错
+        - generic [ref=e20]:
+          - heading "自动剪辑结果" [level=1] [ref=e21]
+          - paragraph [ref=e22]: 先验收已确认的进球和助攻片段；只有在你怀疑漏剪时，才需要继续看系统补充片段。拼接视频和标注视频都只是附加材料。
+      - generic [ref=e23]:
+        - button "返回首页" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]:
+            - img
+            - text: 返回首页
+        - button "刷新" [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]:
+            - img
+            - text: 刷新
+        - button "重新框选并重跑" [ref=e28] [cursor=pointer]:
+          - generic [ref=e29]:
+            - img
+            - text: 重新框选并重跑
+        - button "下载已确认片段 (1)" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]:
+            - img
+            - text: 下载已确认片段 (1)
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]: 交付
+        - heading "先下载 1 个已确认片段" [level=2] [ref=e36]
+        - paragraph [ref=e37]: 当前已经确认了 1 个片段；另外有 1 个系统补充回合被移到了高级排错区，只有在你想继续排查漏剪时再看。
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - generic [ref=e40]: 主交付片段
+          - generic [ref=e41]: "1"
+        - generic [ref=e42]:
+          - generic [ref=e43]: 可直接验收
+          - generic [ref=e44]: "1"
+        - generic [ref=e45]:
+          - generic [ref=e46]: 高级排错回合
+          - generic [ref=e47]: "1"
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - img [ref=e53]
+              - heading "自动导出的已确认片段" [level=2] [ref=e56]
+            - paragraph [ref=e57]: 这是当前最值得先验收的结果。 助攻片段会尽量从目标球员的控球或传球动作前开始；系统补充片段不会再混入主交付。
+            - paragraph [ref=e58]: "主交付 ZIP 只包含 `score / assist`。只有你主动进入高级排错区时，才会单独下载系统补充片段和查看 `manifest.json`。"
+            - generic [ref=e59]:
+              - generic [ref=e60]: 目标球员进球 1
+              - generic [ref=e61]: 目标球员助攻 0
+              - generic [ref=e62]: 系统补充 1
+          - button "下载已确认片段 ZIP" [ref=e64] [cursor=pointer]:
+            - generic [ref=e65]:
+              - img
+              - text: 下载已确认片段 ZIP
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - heading "当前预览：片段 2" [level=3] [ref=e70]
+                - generic [ref=e72]: 目标球员进球
+                - generic [ref=e73]: 置信度 86%
+              - paragraph [ref=e74]: 5.59s - 13.59s · 8.00s
+            - generic [ref=e75]:
+              - button "上一段" [disabled]:
+                - generic:
+                  - img
+                  - text: 上一段
+              - button "下一段" [ref=e76] [cursor=pointer]:
+                - generic [ref=e77]:
+                  - text: 下一段
+                  - img
+              - button "下载当前片段" [ref=e78] [cursor=pointer]:
+                - generic [ref=e79]:
+                  - img
+                  - text: 下载当前片段
+          - generic [ref=e80]:
+            - heading "片段 2 预览" [level=3] [ref=e82]
+            - generic [ref=e83]:
+              - button [ref=e86]:
+                - img [ref=e87]
+              - generic [ref=e89]:
+                - slider [ref=e91]: "0"
+                - generic [ref=e92]:
+                  - generic [ref=e93]:
+                    - button [ref=e94] [cursor=pointer]:
+                      - img
+                    - button [ref=e95] [cursor=pointer]:
+                      - img
+                    - slider [ref=e97]: "1"
+                    - generic [ref=e98]: 00:00 / 00:08
+                  - generic [ref=e99]:
+                    - button [ref=e100] [cursor=pointer]:
+                      - img
+                    - button [ref=e101] [cursor=pointer]:
+                      - img
+                    - button [ref=e102] [cursor=pointer]:
+                      - img
+                    - button [ref=e103] [cursor=pointer]:
+                      - img
+        - generic [ref=e104]:
+          - generic [ref=e105]:
+            - generic [ref=e106]:
+              - generic [ref=e107]: 优先验收
+              - generic [ref=e108]: 下面这些片段已经确认归因到目标球员，先看它们。
+            - generic [ref=e109]:
+              - generic [ref=e111]:
+                - generic [ref=e112]:
+                  - heading "目标球员进球" [level=3] [ref=e113]
+                  - generic [ref=e115]: "1"
+                - paragraph [ref=e116]: 已经确认归因到目标球员的进球片段。
+              - generic [ref=e118]:
+                - generic [ref=e119]:
+                  - generic [ref=e120]: 片段 2
+                  - generic [ref=e121]: 5.59s - 13.59s · 8.00s
+                - generic [ref=e122]:
+                  - generic [ref=e124]: 目标球员进球
+                  - generic [ref=e125]: 置信度 86%
+                  - button "正在预览" [ref=e126] [cursor=pointer]:
+                    - generic [ref=e127]:
+                      - img
+                      - text: 正在预览
+                  - button "单独下载" [ref=e128] [cursor=pointer]:
+                    - generic [ref=e129]:
+                      - img
+                      - text: 单独下载
+          - generic [ref=e131]:
+            - generic [ref=e132]:
+              - generic [ref=e133]: 高级排错
+              - generic [ref=e134]:
+                - heading "系统补充片段" [level=3] [ref=e135]
+                - generic [ref=e137]: "1"
+              - paragraph [ref=e138]: 这些片段只用于排查漏剪，不属于主交付。已经有确认片段时，默认不需要先看这里。
+            - generic [ref=e139]:
+              - button "展开系统补充片段" [ref=e140] [cursor=pointer]
+              - button "下载高级排错片段 ZIP" [ref=e141] [cursor=pointer]:
+                - generic [ref=e142]:
+                  - img
+                  - text: 下载高级排错片段 ZIP
+      - generic [ref=e144]:
+        - generic [ref=e145]:
+          - generic [ref=e146]: 辅助复核
+          - heading "辅助复核材料" [level=2] [ref=e147]
+          - paragraph [ref=e148]: 这里放的是辅助判断材料，不是主交付。只有在你怀疑漏剪、人物跟丢，或者想核对系统为什么补出某些片段时再展开。
+        - button "展开辅助复核" [ref=e149] [cursor=pointer]
+      - generic [ref=e151]:
+        - generic [ref=e152]:
+          - generic [ref=e153]: 验收建议
+          - heading "验收建议（可选）" [level=2] [ref=e154]
+          - paragraph [ref=e155]: 这里不再展示内部实现细节，只保留当前结果为什么这样交付，以及你下一步该怎么验收。
+        - generic [ref=e156]:
+          - generic [ref=e157]: 当前说明
+          - generic [ref=e158]: 已导出 1 个已确认片段，并额外保留 1 个系统补充回合。建议先验收已确认片段，如怀疑漏剪，再检查系统补充片段。
+        - generic [ref=e159]:
+          - generic [ref=e160]: 起始帧说明
+          - generic [ref=e161]:
+            - generic [ref=e162]: 你选择的起始帧：00:04 (4.62s)
+            - generic [ref=e163]:
+              - text: 系统实际追踪起点：
+              - generic [ref=e164]: 00:03 (3.03s)
+              - text: 为了补抓更早回合，系统自动把追踪起点前移了一些。
+        - generic [ref=e165]:
+          - generic [ref=e166]: 建议顺序
+          - generic [ref=e167]: 先下载已确认片段 ZIP；只有怀疑漏剪时，再展开高级排错区继续看系统补充片段。
+          - generic [ref=e168]: 系统补充片段只是兜底，不是主交付。
+          - generic [ref=e169]: 先验收已确认片段，如怀疑漏剪，再检查系统补充片段。
+        - generic [ref=e170]:
+          - generic [ref=e171]: 补充说明
+          - generic [ref=e173]: 部分目标球员相关回合仍未通过最终进球确认，暂作为系统补充片段保留
+        - generic [ref=e174]:
+          - generic [ref=e175]: 标注视频保留原因
+          - generic [ref=e176]: 当前因为存在系统补充片段，系统已自动保留标注视频。

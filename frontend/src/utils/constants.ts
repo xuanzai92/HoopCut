@@ -25,6 +25,7 @@ export const API_CONFIG = {
 // API 端点
 export const API_ENDPOINTS = {
   UPLOAD: '/api/upload',
+  UPLOAD_CANDIDATES: '/api/upload/candidates',
   PROCESS: '/api/process',
   PROGRESS: '/api/progress',
   DOWNLOAD: '/api/download',
@@ -64,15 +65,15 @@ export const STAGE_DESCRIPTIONS = {
   [PROCESSING_STAGES.UPLOADING]: '正在校验任务参数并准备进入本地处理流程...',
   [PROCESSING_STAGES.ANALYZING]: '正在逐帧分析视频内容...',
   [PROCESSING_STAGES.DETECTING]: '正在识别篮球轨迹和投篮时刻...',
-  [PROCESSING_STAGES.GENERATING]: '正在剪辑归因到你的高光镜头...',
+  [PROCESSING_STAGES.GENERATING]: '正在导出与你相关的进球和助攻片段...',
   [PROCESSING_STAGES.FINALIZING]: '正在写入统计结果并导出文件...',
   [PROCESSING_STAGES.COMPLETED]: '本地处理完成，可以查看结果或下载视频。',
 } as const;
 
 // 默认处理配置
 export const DEFAULT_PROCESSING_CONFIG = {
-  beforeSeconds: 3,
-  afterSeconds: 1,
+  beforeSeconds: 6,
+  afterSeconds: 2,
 };
 
 // 文件限制

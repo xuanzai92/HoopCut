@@ -3,13 +3,17 @@ import cv2
 import subprocess
 import os
 import tempfile
-from typing import List, Dict
+from typing import List, Dict, Optional
 import shutil
 
 class VideoProcessor:
     """
     视频剪辑和拼接处理器
     """
+    CONFIRMED_HIGHLIGHT_ROLES = {'score', 'assist'}
+    DEFAULT_INVOLVEMENT_LEAD_SECONDS = 1.0
+    ASSIST_INVOLVEMENT_LEAD_SECONDS = 2.0
+    TARGET_RELATED_REVIEW_LEAD_SECONDS = 1.5
     
     def __init__(self, temp_dir=None):
         """
@@ -42,9 +46,42 @@ class VideoProcessor:
         except Exception as e:
             raise Exception(f"FFmpeg 检查失败: {str(e)}")
     
+    @classmethod
+    def _resolve_involvement_lead_seconds(cls, shot: Dict) -> float:
+        role = str(shot.get('highlight_role') or '')
+        reason = str(shot.get('candidate_reason') or '')
+        source = str(shot.get('candidate_source') or '')
+
+        if role == 'assist' or 'assist' in reason:
+            return cls.ASSIST_INVOLVEMENT_LEAD_SECONDS
+
+        if source == 'target_attempt_fallback' or reason.startswith('attempt_'):
+            return cls.TARGET_RELATED_REVIEW_LEAD_SECONDS
+
+        return cls.DEFAULT_INVOLVEMENT_LEAD_SECONDS
+
+    @classmethod
+    def _calculate_clip_bounds(cls, shot: Dict, duration: float, before: float, after: float) -> Dict:
+        shot_time = float(shot['timestamp'])
+        start_time = max(0, shot_time - before)
+
+        involvement_start = shot.get('involvement_start_timestamp')
+        if isinstance(involvement_start, (int, float)):
+            involvement_lead_seconds = cls._resolve_involvement_lead_seconds(shot)
+            start_time = min(start_time, max(0, float(involvement_start) - involvement_lead_seconds))
+
+        end_time = min(duration, shot_time + after)
+        return {
+            'start': round(start_time, 3),
+            'end': round(end_time, 3),
+            'duration': round(max(end_time - start_time, 0), 3),
+        }
+
     def extract_clips(self, video_path: str, timestamps: List[Dict], 
                      before: float = 8, after: float = 2, 
-                     progress_callback=None, log_callback=None) -> List[str]:
+                     progress_callback=None, log_callback=None,
+                     output_dir: Optional[str] = None,
+                     filename_prefix: str = 'clip') -> List[Dict]:
         """
         提取每个进球的视频片段
         
@@ -56,42 +93,49 @@ class VideoProcessor:
             progress_callback: 进度回调函数
         
         Returns:
-            剪辑文件路径列表
+            剪辑片段元数据列表
         """
-        # 只处理进球的片段
-        made_shots = [ts for ts in timestamps if ts.get('made', False)]
-        
-        if not made_shots:
-            print("⚠️  没有检测到进球，无法生成集锦")
+        exportable_shots = [
+            ts for ts in timestamps
+            if ts.get('made', False) or ts.get('clip_export', False)
+        ]
+
+        if not exportable_shots:
+            print("⚠️  没有可导出的相关片段")
             return []
         
         if log_callback:
-            log_callback(f"开始提取 {len(made_shots)} 个进球片段...")
+            log_callback(f"开始提取 {len(exportable_shots)} 个相关片段...")
         
         # 获取视频信息
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            cap.release()
+            raise ValueError("无法读取视频帧率")
         duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
         cap.release()
         
-        clips = []
+        clip_segments = []
+        clip_output_dir = output_dir or self.temp_dir
+        os.makedirs(clip_output_dir, exist_ok=True)
         
-        for idx, shot in enumerate(made_shots):
+        for idx, shot in enumerate(exportable_shots):
             # 计算剪辑时间
-            shot_time = shot['timestamp']
-            start_time = max(0, shot_time - before)
-            end_time = min(duration, shot_time + after)
-            clip_duration = end_time - start_time
+            bounds = self._calculate_clip_bounds(shot, duration, before, after)
+            start_time = bounds['start']
+            end_time = bounds['end']
+            clip_duration = bounds['duration']
             
             # 生成临时文件名
-            clip_filename = f"clip_{idx:03d}_{shot['frame']}.mp4"
-            clip_path = os.path.join(self.temp_dir, clip_filename)
+            clip_filename = f"{filename_prefix}_{idx + 1:03d}_{shot['frame']}.mp4"
+            clip_path = os.path.join(clip_output_dir, clip_filename)
             
             if log_callback:
-                log_callback(f"提取片段 {idx + 1}/{len(made_shots)}: {start_time:.2f}s - {end_time:.2f}s (时长: {clip_duration:.2f}s)")
+                log_callback(f"提取片段 {idx + 1}/{len(exportable_shots)}: {start_time:.2f}s - {end_time:.2f}s (时长: {clip_duration:.2f}s)")
             
             try:
-                # 使用FFmpeg剪辑（不重新编码，提高兼容性）
+                # 单片段导出优先保证起止点准确，避免关键帧截断丢掉传球或起手动作。
                 input_path = os.path.abspath(video_path)
                 cmd = [
                     'ffmpeg',
@@ -99,8 +143,15 @@ class VideoProcessor:
                     '-ss', str(start_time),
                     '-i', input_path,
                     '-t', str(clip_duration),
-                    '-c', 'copy',
-                    '-avoid_negative_ts', 'make_zero',
+                    '-map', '0:v:0',
+                    '-map', '0:a?',
+                    '-c:v', 'libx264',
+                    '-preset', 'veryfast',
+                    '-crf', '18',
+                    '-pix_fmt', 'yuv420p',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    '-movflags', '+faststart',
                     clip_path
                 ]
                 
@@ -114,7 +165,20 @@ class VideoProcessor:
                 
                 # 验证文件是否生成
                 if os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
-                    clips.append(clip_path)
+                    clip_segments.append({
+                        'path': clip_path,
+                        'filename': os.path.basename(clip_path),
+                        'index': idx + 1,
+                        'start': start_time,
+                        'end': end_time,
+                        'duration': clip_duration,
+                        'shot_frame': shot['frame'],
+                        'shot_timestamp': shot['timestamp'],
+                        'highlight_role': shot.get('highlight_role', 'score'),
+                        'candidate_reason': shot.get('candidate_reason'),
+                        'candidate_source': shot.get('candidate_source'),
+                        'highlight_confidence': shot.get('highlight_confidence'),
+                    })
                     if log_callback:
                         log_callback(f"✓ 片段 {idx + 1} 提取成功")
                 else:
@@ -123,7 +187,7 @@ class VideoProcessor:
                 
                 # 进度回调
                 if progress_callback:
-                    progress_callback(idx + 1, len(made_shots))
+                    progress_callback(idx + 1, len(exportable_shots))
                     
             except subprocess.TimeoutExpired:
                 if log_callback:
@@ -137,8 +201,8 @@ class VideoProcessor:
                     log_callback(f"✗ 片段 {idx + 1} 未知错误: {str(e)}")
         
         if log_callback:
-            log_callback(f"✓ 成功提取 {len(clips)}/{len(made_shots)} 个片段")
-        return clips
+            log_callback(f"✓ 成功提取 {len(clip_segments)}/{len(exportable_shots)} 个片段")
+        return clip_segments
     
     def concatenate_clips(self, clips: List[str], output_path: str,
                          add_transitions: bool = False, log_callback=None) -> bool:
@@ -161,7 +225,16 @@ class VideoProcessor:
             log_callback(f"开始拼接 {len(clips)} 个片段...")
         
         # 创建文件列表
-        list_file = os.path.join(self.temp_dir, 'concat_list.txt')
+        list_handle = tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            suffix='.txt',
+            prefix='concat_',
+            dir=self.temp_dir,
+            delete=False,
+        )
+        list_file = list_handle.name
+        list_handle.close()
         
         try:
             with open(list_file, 'w', encoding='utf-8') as f:
@@ -269,7 +342,10 @@ class VideoProcessor:
         print(f"✓ 清理了 {cleaned}/{len(clips)} 个临时文件")
     
     def process_video_full_pipeline(self, video_path: str, timestamps: List[Dict],
-                                    output_path: str, before: float = 8, after: float = 2, log_callback=None) -> Dict:
+                                    output_path: str, before: float = 8, after: float = 2,
+                                    log_callback=None, clip_output_dir: Optional[str] = None,
+                                    clip_filename_prefix: str = 'clip',
+                                    keep_clips: bool = False) -> Dict:
         """
         完整的处理流程：检测 -> 剪辑 -> 拼接
         
@@ -290,21 +366,51 @@ class VideoProcessor:
         result = {
             'success': False,
             'clips_extracted': 0,
+            'clips': [],
             'output_file': None,
             'error': None
         }
         
         try:
             # 步骤1: 提取片段
-            clips = self.extract_clips(video_path, timestamps, before, after, None, log_callback)
+            clip_segments = self.extract_clips(
+                video_path,
+                timestamps,
+                before,
+                after,
+                None,
+                log_callback,
+                output_dir=clip_output_dir,
+                filename_prefix=clip_filename_prefix,
+            )
+            clips = [segment['path'] for segment in clip_segments]
             result['clips_extracted'] = len(clips)
+            result['clips'] = [
+                {key: value for key, value in segment.items() if key != 'path'}
+                for segment in clip_segments
+            ]
             
             if not clips:
                 result['error'] = "没有成功提取任何片段"
                 return result
+
+            confirmed_clips = [
+                segment['path']
+                for segment in clip_segments
+                if str(segment.get('highlight_role') or '') in self.CONFIRMED_HIGHLIGHT_ROLES
+            ]
+
+            if not confirmed_clips:
+                if log_callback:
+                    log_callback("当前没有已确认的进球或助攻片段，跳过拼接视频生成")
+                result['success'] = True
+                result['output_file'] = None
+                if not keep_clips:
+                    self.cleanup_clips(clips)
+                return result
             
             # 步骤2: 拼接片段
-            success = self.concatenate_clips(clips, output_path, False, log_callback)
+            success = self.concatenate_clips(confirmed_clips, output_path, False, log_callback)
             
             if success:
                 result['success'] = True
@@ -313,7 +419,8 @@ class VideoProcessor:
                 result['error'] = "拼接失败"
             
             # 步骤3: 清理临时文件
-            self.cleanup_clips(clips)
+            if not keep_clips:
+                self.cleanup_clips(clips)
             
         except Exception as e:
             result['error'] = str(e)

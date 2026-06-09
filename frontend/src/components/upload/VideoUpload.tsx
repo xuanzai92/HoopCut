@@ -3,10 +3,15 @@
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Alert, Button, Card, Chip } from '@heroui/react';
-import { Film, ImagePlus, Trash2, UploadCloud, Video } from 'lucide-react';
-import { validateVideoFile, formatFileSize, formatDuration } from '@/utils';
-import type { SelectionFrame, VideoFile } from '@/types';
+import { ChevronLeft, ChevronRight, Film, ImagePlus, RotateCcw, Trash2, UploadCloud, Video } from 'lucide-react';
+import { validateVideoFile, formatFileSize, formatDuration, syncSelectionBoxToFrame } from '@/utils';
+import type { PlayerSelectionBox, ReusableVideoSource, SelectionFrame, VideoFile } from '@/types';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
+import { ApiService } from '@/services/api';
+import { withRetry } from '@/services/http';
+
+const REMOTE_SELECTION_FRAME_RETRY_ATTEMPTS = 4;
+const REMOTE_SELECTION_FRAME_RETRY_DELAY_MS = 800;
 
 const loadVideoDuration = (previewUrl: string): Promise<number> => {
   return new Promise((resolve, reject) => {
@@ -30,9 +35,11 @@ const loadVideoDuration = (previewUrl: string): Promise<number> => {
     }, 10000);
 
     video.preload = 'metadata';
+    video.crossOrigin = 'anonymous';
     video.onloadedmetadata = () => {
       clearTimeout(timeout);
-      cleanup(() => resolve(video.duration));
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      cleanup(() => resolve(duration));
     };
     video.onerror = () => {
       clearTimeout(timeout);
@@ -95,9 +102,8 @@ const extractSelectionFrame = (
           width: canvas.width,
           height: canvas.height,
           time: captureTime,
-          frame: video.readyState >= 1 && video.duration > 0
-            ? Math.round(captureTime * 30)
-            : undefined,
+          source: 'local',
+          recommended: false,
         })
       );
     };
@@ -117,6 +123,7 @@ const extractSelectionFrame = (
     video.preload = 'auto';
     video.muted = true;
     video.playsInline = true;
+    video.crossOrigin = 'anonymous';
     video.onloadedmetadata = () => {
       const duration = Number.isFinite(video.duration) ? video.duration : 0;
       const targetTime = Math.max(0, Math.min(timeInSeconds, duration > 0 ? duration : timeInSeconds));
@@ -139,8 +146,242 @@ const extractSelectionFrame = (
   });
 };
 
+const clampTime = (timeInSeconds: number, duration?: number): number => {
+  if (!Number.isFinite(timeInSeconds)) {
+    return 0;
+  }
+
+  if (!duration || duration <= 0) {
+    return Math.max(0, timeInSeconds);
+  }
+
+  return Math.min(Math.max(0, timeInSeconds), duration);
+};
+
+const buildCandidateTimes = (duration: number): number[] => {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return [0];
+  }
+
+  const safeDuration = duration > 0.25 ? duration - 0.25 : duration;
+  const candidateCount = duration <= 45
+    ? 8
+    : duration <= 5 * 60
+      ? 12
+      : duration <= 20 * 60
+        ? 16
+        : duration <= 60 * 60
+          ? 20
+          : 24;
+  const times = new Set<number>([0]);
+
+  if (candidateCount <= 1 || safeDuration <= 0.01) {
+    return [0];
+  }
+
+  // 覆盖整段视频，同时对前段加密，减少用户必须手动拖视频找人的概率。
+  const earlyRatios = duration >= 30 * 60
+    ? [0.003, 0.008, 0.015, 0.03, 0.05, 0.08, 0.12, 0.18, 0.26]
+    : duration >= 10 * 60
+      ? [0.005, 0.015, 0.03, 0.06, 0.1, 0.16, 0.24]
+      : duration >= 2 * 60
+        ? [0.03, 0.07, 0.12, 0.18, 0.26]
+        : duration >= 10
+          ? [0.05, 0.12, 0.22]
+          : [];
+  earlyRatios.forEach((ratio) => {
+    const time = Number((safeDuration * ratio).toFixed(2));
+    times.add(clampTime(time, safeDuration));
+  });
+
+  for (let index = 1; index < candidateCount; index += 1) {
+    const ratio = index / (candidateCount - 1);
+    const time = Number((safeDuration * ratio).toFixed(2));
+    times.add(clampTime(time, safeDuration));
+  }
+
+  return Array.from(times).sort((left, right) => left - right);
+};
+
+const areFramesNear = (left: SelectionFrame, right: SelectionFrame): boolean => {
+  return Math.abs(left.time - right.time) < 0.35;
+};
+
+const normalizeSelectionFrame = (
+  frame: SelectionFrame,
+  defaults: Partial<SelectionFrame> = {},
+): SelectionFrame => {
+  const normalizedFrame: SelectionFrame = {
+    ...defaults,
+    ...frame,
+    source: frame.source ?? defaults.source ?? 'local',
+    recommended: frame.recommended ?? defaults.recommended ?? false,
+  };
+
+  normalizedFrame.suggestedBox = syncSelectionBoxToFrame(
+    frame.suggestedBox ?? defaults.suggestedBox ?? null,
+    normalizedFrame,
+  );
+
+  return normalizedFrame;
+};
+
+const getSelectionFramePriority = (frame: SelectionFrame): number => {
+  return (
+    (frame.recommended ? 2 : 0)
+    + (frame.source === 'smart' ? 1 : 0)
+    + (frame.recommendationScore ?? 0)
+  );
+};
+
+const mergeSelectionFrameCandidates = (
+  primaryFrames: SelectionFrame[],
+  secondaryFrames: SelectionFrame[] = [],
+  pinnedFrame?: SelectionFrame,
+): SelectionFrame[] => {
+  const merged: SelectionFrame[] = [];
+
+  const upsertFrame = (frame: SelectionFrame) => {
+    const normalizedFrame = normalizeSelectionFrame(frame);
+    const existingIndex = merged.findIndex((candidate) => areFramesNear(candidate, normalizedFrame));
+    if (existingIndex < 0) {
+      merged.push(normalizedFrame);
+      return;
+    }
+
+    if (getSelectionFramePriority(normalizedFrame) > getSelectionFramePriority(merged[existingIndex])) {
+      merged[existingIndex] = normalizedFrame;
+    }
+  };
+
+  primaryFrames.forEach(upsertFrame);
+  secondaryFrames.forEach(upsertFrame);
+  if (pinnedFrame) {
+    upsertFrame(pinnedFrame);
+  }
+
+  return merged.sort((left, right) => {
+    const priorityDiff = getSelectionFramePriority(right) - getSelectionFramePriority(left);
+    if (Math.abs(priorityDiff) > 1e-6) {
+      return priorityDiff;
+    }
+    return left.time - right.time;
+  });
+};
+
+const extractSelectionFrameCandidates = async (
+  previewUrl: string,
+  duration: number,
+): Promise<SelectionFrame[]> => {
+  const candidateTimes = buildCandidateTimes(duration);
+  const candidateFrames: Array<SelectionFrame | null> = [];
+
+  for (const time of candidateTimes) {
+    try {
+      candidateFrames.push(await extractSelectionFrame(previewUrl, time));
+    } catch {
+      candidateFrames.push(null);
+    }
+  }
+
+  return candidateFrames
+    .filter((frame): frame is SelectionFrame => frame !== null)
+    .reduce<SelectionFrame[]>((frames, frame) => {
+      if (frames.some((existingFrame) => areFramesNear(existingFrame, frame))) {
+        return frames;
+      }
+      frames.push(normalizeSelectionFrame(frame, { source: 'local', recommended: false }));
+      return frames;
+    }, []);
+};
+
+const isObjectUrl = (url?: string): boolean => Boolean(url?.startsWith('blob:'));
+
+const releasePreviewUrl = (url?: string) => {
+  if (isObjectUrl(url)) {
+    URL.revokeObjectURL(url as string);
+  }
+};
+
+interface PrepareVideoFileOptions {
+  previewUrl: string;
+  name: string;
+  size: number;
+  type: string;
+  file?: File;
+  sourceTaskId?: string;
+  sourceFileId?: string;
+  targetPlayerBox?: PlayerSelectionBox | null;
+  reusable?: boolean;
+  reusableSource?: ReusableVideoSource | null;
+}
+
+interface PreparedVideoFile {
+  videoFile: VideoFile;
+  candidateFrames: SelectionFrame[];
+  initialPreviewTime: number;
+}
+
+const prepareVideoFile = async ({
+  previewUrl,
+  name,
+  size,
+  type,
+  file,
+  sourceTaskId,
+  sourceFileId,
+  targetPlayerBox,
+  reusable = false,
+  reusableSource = null,
+}: PrepareVideoFileOptions): Promise<PreparedVideoFile> => {
+  const duration = await loadVideoDuration(previewUrl);
+  const candidateFrames = await extractSelectionFrameCandidates(previewUrl, duration);
+
+  let selectionFrame = candidateFrames[0] ?? await extractSelectionFrame(previewUrl, 0);
+  let selectionFrameConfirmed = false;
+
+  if (
+    targetPlayerBox &&
+    Number.isFinite(targetPlayerBox.selectionTime) &&
+    targetPlayerBox.selectionTime >= 0
+  ) {
+    selectionFrame = await extractSelectionFrame(previewUrl, targetPlayerBox.selectionTime);
+    selectionFrameConfirmed = true;
+  }
+
+  const normalizedCandidateFrames = (
+    candidateFrames.some((candidateFrame) => areFramesNear(candidateFrame, selectionFrame))
+      ? candidateFrames
+      : [selectionFrame, ...candidateFrames]
+  ).sort((left, right) => left.time - right.time);
+
+  return {
+    videoFile: {
+      file,
+      preview: previewUrl,
+      duration,
+      size,
+      type,
+      name,
+      selectionFrame,
+      selectionFrameConfirmed,
+      targetPlayerBox: syncSelectionBoxToFrame(targetPlayerBox ?? null, selectionFrame),
+      sourceTaskId,
+      sourceFileId,
+      sourceUrl: previewUrl,
+      reusable,
+      reusableSource,
+      uploadStatus: reusable || sourceFileId ? 'uploaded' : file ? 'uploading' : 'local',
+    },
+    candidateFrames: normalizedCandidateFrames.length > 0 ? normalizedCandidateFrames : [selectionFrame],
+    initialPreviewTime: selectionFrameConfirmed ? selectionFrame.time : 0,
+  };
+};
+
 interface VideoUploadProps {
   onFileSelect: (file: VideoFile | null) => void;
+  onExitReusableSource?: () => void;
+  initialSource?: ReusableVideoSource | null;
   loading?: boolean;
   progress?: number;
   disabled?: boolean;
@@ -149,6 +390,8 @@ interface VideoUploadProps {
 
 export const VideoUpload: React.FC<VideoUploadProps> = ({
   onFileSelect,
+  onExitReusableSource,
+  initialSource = null,
   loading = false,
   progress = 0,
   disabled = false,
@@ -159,14 +402,109 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCapturingFrame, setIsCapturingFrame] = useState(false);
   const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
+  const [selectionFrameCandidates, setSelectionFrameCandidates] = useState<SelectionFrame[]>([]);
+  const [remoteCandidateStatus, setRemoteCandidateStatus] = useState<'idle' | 'uploading' | 'loading' | 'ready' | 'error'>('idle');
+  const [remoteUploadProgress, setRemoteUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const initializedSourceKeyRef = useRef<string | null>(null);
+  const selectedFileRef = useRef<VideoFile | null>(null);
+  const selectionFrameCandidatesRef = useRef<SelectionFrame[]>([]);
+  const selectionRequestTokenRef = useRef(0);
   const { error, hasError, handleError, clearError } = useErrorHandler();
+
+  const syncSelectedFile = useCallback((nextFile: VideoFile | null) => {
+    selectedFileRef.current = nextFile;
+    setSelectedFile(nextFile);
+    onFileSelect(nextFile);
+  }, [onFileSelect]);
+
+  useEffect(() => {
+    selectedFileRef.current = selectedFile;
+  }, [selectedFile]);
+
+  useEffect(() => {
+    selectionFrameCandidatesRef.current = selectionFrameCandidates;
+  }, [selectionFrameCandidates]);
+
+  const applySmartSelectionFrames = useCallback((smartFrames: SelectionFrame[]) => {
+    const latestFile = selectedFileRef.current;
+    if (!latestFile || smartFrames.length === 0) {
+      return;
+    }
+
+    const normalizedSmartFrames = smartFrames.map((frame) => normalizeSelectionFrame(frame, {
+      source: 'smart',
+      recommended: true,
+    }));
+    const mergedFrames = mergeSelectionFrameCandidates(
+      normalizedSmartFrames,
+      selectionFrameCandidatesRef.current,
+      latestFile.selectionFrame,
+    );
+    setSelectionFrameCandidates(mergedFrames);
+
+    const matchingSelectionFrame = latestFile.selectionFrame
+      ? mergedFrames.find((candidate) => areFramesNear(candidate, latestFile.selectionFrame as SelectionFrame))
+      : mergedFrames[0];
+    const nextSelectionFrame = latestFile.selectionFrameConfirmed
+      ? (matchingSelectionFrame ?? latestFile.selectionFrame)
+      : (mergedFrames[0] ?? latestFile.selectionFrame);
+
+    const nextTargetPlayerBox = syncSelectionBoxToFrame(
+      latestFile.targetPlayerBox
+      ?? (
+        latestFile.selectionFrameConfirmed
+          ? matchingSelectionFrame?.suggestedBox ?? null
+          : null
+      ),
+      nextSelectionFrame,
+    );
+
+    syncSelectedFile({
+      ...latestFile,
+      selectionFrame: nextSelectionFrame,
+      targetPlayerBox: nextTargetPlayerBox,
+    });
+  }, [syncSelectedFile]);
+
+  const loadRemoteSelectionFrames = useCallback(async (
+    fileId: string,
+    requestToken: number,
+  ) => {
+    setRemoteCandidateStatus('loading');
+    try {
+      const smartFrames = await withRetry(
+        () => ApiService.getSelectionFrameCandidates(fileId),
+        REMOTE_SELECTION_FRAME_RETRY_ATTEMPTS,
+        REMOTE_SELECTION_FRAME_RETRY_DELAY_MS,
+      );
+      if (selectionRequestTokenRef.current !== requestToken) {
+        return;
+      }
+
+      if (smartFrames.length > 0) {
+        applySmartSelectionFrames(smartFrames);
+        setRemoteCandidateStatus('ready');
+        return;
+      }
+
+      setRemoteCandidateStatus('idle');
+    } catch {
+      if (selectionRequestTokenRef.current === requestToken) {
+        setRemoteCandidateStatus('error');
+      }
+    }
+  }, [applySmartSelectionFrames]);
 
   const handleFileSelect = useCallback(async (file: File) => {
     clearError();
     setIsProcessing(true);
+    setRemoteCandidateStatus('uploading');
+    setRemoteUploadProgress(0);
     let preview: string | null = null;
+    const requestToken = selectionRequestTokenRef.current + 1;
+    selectionRequestTokenRef.current = requestToken;
 
     try {
       const validation = validateVideoFile(file);
@@ -175,37 +513,136 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
       }
 
       preview = URL.createObjectURL(file);
-      const [duration, selectionFrame] = await Promise.all([
-        loadVideoDuration(preview),
-        extractSelectionFrame(preview, 0),
-      ]);
-
-      const videoFile: VideoFile = {
-        file,
-        preview,
-        duration,
+      const prepared = await prepareVideoFile({
+        previewUrl: preview,
+        name: file.name,
         size: file.size,
         type: file.type,
-        name: file.name,
-        selectionFrame,
-        targetPlayerBox: null,
-      };
+        file,
+      });
 
-      setSelectedFile(videoFile);
-      setPreviewUrl(preview);
-      setPreviewCurrentTime(0);
-      onFileSelect(videoFile);
+      syncSelectedFile(prepared.videoFile);
+      setSelectionFrameCandidates(prepared.candidateFrames);
+      setPreviewUrl((currentPreviewUrl) => {
+        releasePreviewUrl(currentPreviewUrl);
+        return preview as string;
+      });
+      setPreviewCurrentTime(prepared.initialPreviewTime);
+
+      void (async () => {
+        let uploadedFileId: string | null = null;
+        try {
+          const uploadResult = await ApiService.uploadVideo(
+            { file },
+            (progressValue) => {
+              if (selectionRequestTokenRef.current !== requestToken) {
+                return;
+              }
+              setRemoteUploadProgress(progressValue);
+            },
+          );
+          if (selectionRequestTokenRef.current !== requestToken) {
+            return;
+          }
+
+          uploadedFileId = uploadResult.fileId;
+          const latestFile = selectedFileRef.current ?? prepared.videoFile;
+          syncSelectedFile({
+            ...latestFile,
+            sourceFileId: uploadResult.fileId,
+            uploadStatus: 'uploaded',
+          });
+        } catch {
+          if (selectionRequestTokenRef.current !== requestToken) {
+            return;
+          }
+
+          const latestFile = selectedFileRef.current ?? prepared.videoFile;
+          syncSelectedFile({
+            ...latestFile,
+            uploadStatus: 'failed',
+          });
+          setRemoteCandidateStatus('error');
+          return;
+        }
+
+        if (uploadedFileId) {
+          await loadRemoteSelectionFrames(uploadedFileId, requestToken);
+        }
+      })();
     } catch (err) {
-      if (preview) {
-        URL.revokeObjectURL(preview);
-      }
+      releasePreviewUrl(preview ?? undefined);
+      setRemoteCandidateStatus('idle');
       handleError(err instanceof Error ? err : new Error('处理文件时发生未知错误'));
     } finally {
       setIsProcessing(false);
     }
 
     return false;
-  }, [onFileSelect, handleError, clearError]);
+  }, [syncSelectedFile, handleError, clearError, loadRemoteSelectionFrames]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sourceKey = initialSource ? `${initialSource.taskId}:${initialSource.fileId}` : null;
+
+    if (!initialSource || !sourceKey || initializedSourceKeyRef.current === sourceKey) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    clearError();
+    setIsProcessing(true);
+    setRemoteCandidateStatus(initialSource?.fileId ? 'loading' : 'idle');
+    setRemoteUploadProgress(100);
+    const requestToken = selectionRequestTokenRef.current + 1;
+    selectionRequestTokenRef.current = requestToken;
+
+    void prepareVideoFile({
+      previewUrl: initialSource.sourceStreamUrl,
+      name: initialSource.filename,
+      size: initialSource.fileSize,
+      type: initialSource.mimeType || 'video/mp4',
+      sourceTaskId: initialSource.taskId,
+      sourceFileId: initialSource.fileId,
+      targetPlayerBox: initialSource.targetPlayerBox ?? null,
+      reusable: true,
+      reusableSource: initialSource,
+    })
+      .then((prepared) => {
+        if (cancelled) {
+          return;
+        }
+
+        initializedSourceKeyRef.current = sourceKey;
+        syncSelectedFile(prepared.videoFile);
+        setSelectionFrameCandidates(prepared.candidateFrames);
+        setPreviewUrl((currentPreviewUrl) => {
+          releasePreviewUrl(currentPreviewUrl);
+          return initialSource.sourceStreamUrl;
+        });
+        setPreviewCurrentTime(prepared.initialPreviewTime);
+        if (prepared.videoFile.sourceFileId) {
+          void loadRemoteSelectionFrames(prepared.videoFile.sourceFileId, requestToken);
+        }
+      })
+      .catch((nextError) => {
+        if (cancelled) {
+          return;
+        }
+        setRemoteCandidateStatus('error');
+        handleError(nextError instanceof Error ? nextError : new Error('加载源视频失败'));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsProcessing(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSource, syncSelectedFile, handleError, clearError, loadRemoteSelectionFrames]);
 
   const handleCaptureCurrentFrame = useCallback(async () => {
     if (!selectedFile || !previewUrl) {
@@ -221,35 +658,80 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
       const updatedFile: VideoFile = {
         ...selectedFile,
         selectionFrame,
+        selectionFrameConfirmed: true,
         targetPlayerBox: null,
       };
 
-      setSelectedFile(updatedFile);
+      syncSelectedFile(updatedFile);
+      setSelectionFrameCandidates((currentCandidates) => {
+        return mergeSelectionFrameCandidates(currentCandidates, [selectionFrame], selectionFrame);
+      });
       setPreviewCurrentTime(selectionFrame.time);
-      onFileSelect(updatedFile);
     } catch (err) {
       handleError(err instanceof Error ? err : new Error('截取当前画面失败'));
     } finally {
       setIsCapturingFrame(false);
     }
-  }, [selectedFile, previewUrl, onFileSelect, handleError, clearError]);
+  }, [selectedFile, previewUrl, syncSelectedFile, handleError, clearError]);
 
   const handleRemoveFile = useCallback(() => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-    setSelectedFile(null);
+    const wasReusable = Boolean(selectedFile?.reusable);
+    selectionRequestTokenRef.current += 1;
+    releasePreviewUrl(previewUrl);
+    syncSelectedFile(null);
     setPreviewUrl('');
     setPreviewCurrentTime(0);
+    setSelectionFrameCandidates([]);
+    setRemoteCandidateStatus('idle');
+    setRemoteUploadProgress(0);
     clearError();
-    onFileSelect(null);
-  }, [previewUrl, onFileSelect, clearError]);
+    if (wasReusable) {
+      onExitReusableSource?.();
+    }
+  }, [selectedFile?.reusable, previewUrl, syncSelectedFile, clearError, onExitReusableSource]);
+
+  const seekPreviewTo = useCallback((nextTime: number) => {
+    const previewVideo = previewVideoRef.current;
+    if (!previewVideo) {
+      return;
+    }
+
+    const clampedTime = clampTime(nextTime, selectedFile?.duration);
+    previewVideo.currentTime = clampedTime;
+    setPreviewCurrentTime(clampedTime);
+  }, [selectedFile?.duration]);
+
+  const seekPreviewBy = useCallback((offsetSeconds: number) => {
+    const previewVideo = previewVideoRef.current;
+    if (!previewVideo) {
+      return;
+    }
+
+    seekPreviewTo((previewVideo.currentTime || 0) + offsetSeconds);
+  }, [seekPreviewTo]);
+
+  const handleSelectCandidateFrame = useCallback((selectionFrame: SelectionFrame) => {
+    if (!selectedFile) {
+      return;
+    }
+
+    const updatedFile: VideoFile = {
+      ...selectedFile,
+      selectionFrame,
+      selectionFrameConfirmed: true,
+      targetPlayerBox: syncSelectionBoxToFrame(selectionFrame.suggestedBox ?? null, selectionFrame),
+    };
+
+    syncSelectedFile(updatedFile);
+    setPreviewCurrentTime(selectionFrame.time);
+    seekPreviewTo(selectionFrame.time);
+  }, [seekPreviewTo, selectedFile, syncSelectedFile]);
+
+  const hasConfirmedSelectionFrame = Boolean(selectedFile?.selectionFrame && selectedFile.selectionFrameConfirmed);
 
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
+      releasePreviewUrl(previewUrl);
     };
   }, [previewUrl]);
 
@@ -279,9 +761,13 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
               <UploadCloud size={30} className="text-orange-300" />
             </div>
             <div className="relative space-y-3">
-              <h3 className="text-2xl font-semibold tracking-tight text-white">上传篮球视频</h3>
+              <h3 className="text-2xl font-semibold tracking-tight text-white">
+                {initialSource && isProcessing ? '正在加载上一次的视频' : '上传篮球视频'}
+              </h3>
               <p className="mx-auto max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-                拖拽文件到这里，或点击选择本地比赛视频。上传后你可以先定位第一次清晰出镜的画面，再框选自己。
+                {initialSource && isProcessing
+                  ? '系统正在直接复用上一次处理的原始比赛视频，稍后你就可以重新选择截图并重跑。'
+                  : '拖拽文件到这里，或点击选择本地比赛视频。系统会先秒出本地候选截图，再在后台补充 AI 推荐截图。你只需要选中目标球员清晰出镜的一张画面，再框选这个人。'}
               </p>
             </div>
             <div className="relative flex flex-wrap justify-center gap-2">
@@ -326,14 +812,14 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
 
             <div className="flex-shrink-0">
               <Button
-                variant="danger-soft"
+                variant={selectedFile?.reusable ? 'secondary' : 'danger-soft'}
                 onClick={handleRemoveFile}
                 isDisabled={loading || isCapturingFrame}
                 size="sm"
               >
                 <span className="inline-flex items-center gap-2">
                   <Trash2 size={14} />
-                  移除
+                  {selectedFile?.reusable ? '改用新视频' : '移除'}
                 </span>
               </Button>
             </div>
@@ -341,61 +827,300 @@ export const VideoUpload: React.FC<VideoUploadProps> = ({
 
           <Alert status="accent">
             <div className="font-medium text-current">
-              如果你不是在开头出镜，先把下面视频拖到你第一次清晰出镜的位置，再截取当前画面。
+              系统会先给出本地候选截图，再补充 AI 推荐截图。优先看带 “AI 推荐” 的候选；如果多个候选都清晰，再优先选择更早出镜的一帧。没有确认这一步前，不会进入下一步框人。
             </div>
           </Alert>
+
+          {remoteCandidateStatus === 'uploading' ? (
+            <Alert status="warning">
+              <div className="font-medium text-current">
+                正在后台上传视频（{Math.max(remoteUploadProgress, 1)}%）并准备 AI 推荐截图。当前先展示本地候选截图，你可以先开始挑图。
+              </div>
+            </Alert>
+          ) : null}
+
+          {remoteCandidateStatus === 'loading' ? (
+            <Alert status="warning">
+              <div className="font-medium text-current">
+                视频已上传，正在生成 AI 推荐截图。生成完成后，候选区会自动刷新。
+              </div>
+            </Alert>
+          ) : null}
+
+          {remoteCandidateStatus === 'ready' ? (
+            <Alert status="success">
+              <div className="font-medium text-current">
+                AI 推荐截图已就绪。优先看带 “AI 推荐” 的候选，系统还会尽量预填一个人物框供你微调。
+              </div>
+            </Alert>
+          ) : null}
+
+          {remoteCandidateStatus === 'error' ? (
+            <Alert status="warning">
+              <div className="font-medium text-current">
+                AI 推荐截图暂时没有生成成功。当前仍然可以直接使用本地候选截图和手动补选继续处理。
+              </div>
+            </Alert>
+          ) : null}
 
           <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-4">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <ImagePlus size={18} className="text-orange-500" />
-                  <span className="font-semibold text-slate-900">选择框选起点</span>
+                  <span className="font-semibold text-slate-900">先选一张框选起始截图</span>
                 </div>
                 <p className="mb-0 mt-2 text-sm text-slate-600">
-                  当前播放位置只是候选画面。点击右侧按钮后，后续框选和跟踪才会从该时间点开始。
+                  AI 推荐截图会排在前面；其余本地候选截图继续保留，作为兜底。系统会先用你选中的这一帧建立人物参考，必要时再自动前移一点去补抓更早回合，所以还是尽量选择目标球员更早且更清晰的出镜画面。
                 </p>
               </div>
-              <Button
-                variant="primary"
-                onClick={() => void handleCaptureCurrentFrame()}
-                isDisabled={disabled || loading || isProcessing || isCapturingFrame}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Film size={16} />
-                  {isCapturingFrame ? '截取中...' : '使用当前播放位置作为框选帧'}
-                </span>
-              </Button>
             </div>
 
-            {previewUrl ? (
-              <video
-                ref={previewVideoRef}
-                src={previewUrl}
-                className="w-full rounded-[20px] bg-black shadow-[0_16px_50px_rgba(15,23,42,0.28)]"
-                controls
-                muted
-                playsInline
-                onTimeUpdate={(event) => {
-                  setPreviewCurrentTime(event.currentTarget.currentTime);
-                }}
-                onSeeked={(event) => {
-                  setPreviewCurrentTime(event.currentTarget.currentTime);
-                }}
-                onLoadedMetadata={(event) => {
-                  setPreviewCurrentTime(event.currentTarget.currentTime);
-                }}
-              />
-            ) : null}
+            {selectionFrameCandidates.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {selectionFrameCandidates.map((candidateFrame, index) => {
+                  const isSelected = Boolean(
+                    selectedFile.selectionFrame && areFramesNear(selectedFile.selectionFrame, candidateFrame),
+                  );
+                  const isConfirmedCandidate = isSelected && hasConfirmedSelectionFrame;
 
-            <div className="mt-3 flex flex-col gap-1 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-              <span>当前播放位置：{formatDuration(previewCurrentTime)}（{previewCurrentTime.toFixed(2)}s）</span>
-              <span>
-                当前框选帧：
-                {selectedFile.selectionFrame
-                  ? ` ${formatDuration(selectedFile.selectionFrame.time)}（${selectedFile.selectionFrame.time.toFixed(2)}s）`
-                  : ' 尚未选择'}
-              </span>
+                  return (
+                    <button
+                      key={`${candidateFrame.time}-${index}`}
+                      type="button"
+                      className={`overflow-hidden rounded-2xl border text-left transition ${
+                        isConfirmedCandidate
+                          ? 'border-orange-300 bg-orange-50 shadow-[0_14px_40px_rgba(249,115,22,0.16)]'
+                          : isSelected
+                            ? 'border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.10)]'
+                            : 'border-slate-200 bg-white/90 hover:border-orange-200 hover:bg-orange-50/50'
+                      }`}
+                      onClick={() => handleSelectCandidateFrame(candidateFrame)}
+                      disabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      <img
+                        src={candidateFrame.imageUrl}
+                        alt={`候选截图 ${index + 1}`}
+                        className="aspect-video w-full bg-black object-cover"
+                      />
+                      <div className="space-y-3 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">候选截图 {index + 1}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {formatDuration(candidateFrame.time)}（{candidateFrame.time.toFixed(2)}s）
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {candidateFrame.recommended ? (
+                              <Chip variant="soft" color="success">AI 推荐</Chip>
+                            ) : null}
+                            {!candidateFrame.recommended && index === 0 ? (
+                              <Chip variant="soft" color="warning">本地兜底</Chip>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {isConfirmedCandidate
+                            ? '当前已选中这张截图，下一步直接框人。'
+                            : candidateFrame.suggestedBox
+                              ? '点击后会带上系统预填的人物框，你只需要微调。'
+                              : '点击这张截图，直接进入下一步框人。'}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/90 px-4 py-10 text-center text-sm text-slate-500">
+                正在准备候选截图...
+              </div>
+            )}
+
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <Film size={18} className="text-orange-500" />
+                      <span className="font-semibold">候选都不合适？手动补选一帧</span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      只有在上面的候选截图都不合适时，才需要拖动视频自己补选。补选时仍然优先选择目标球员更早、更清晰的出镜画面。
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void handleCaptureCurrentFrame()}
+                    isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Film size={16} />
+                      {isCapturingFrame ? '截取中...' : '使用当前播放位置'}
+                    </span>
+                  </Button>
+                </div>
+
+                {previewUrl ? (
+                  <video
+                    ref={previewVideoRef}
+                    src={previewUrl}
+                    crossOrigin="anonymous"
+                    className="w-full rounded-[20px] bg-black shadow-[0_16px_50px_rgba(15,23,42,0.28)]"
+                    controls
+                    muted
+                    playsInline
+                    onTimeUpdate={(event) => {
+                      setPreviewCurrentTime(event.currentTarget.currentTime);
+                    }}
+                    onSeeked={(event) => {
+                      setPreviewCurrentTime(event.currentTarget.currentTime);
+                    }}
+                    onLoadedMetadata={(event) => {
+                      setPreviewCurrentTime(event.currentTarget.currentTime);
+                    }}
+                  />
+                ) : null}
+
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3 text-sm text-slate-600">
+                    <span>当前播放位置：{formatDuration(previewCurrentTime)}（{previewCurrentTime.toFixed(2)}s）</span>
+                    <span>视频总时长：{selectedFile.duration ? formatDuration(selectedFile.duration) : '未知'}</span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min={0}
+                    max={selectedFile.duration || 0}
+                    step={0.1}
+                    value={previewCurrentTime}
+                    onChange={(event) => {
+                      seekPreviewTo(Number(event.currentTarget.value));
+                    }}
+                    className="hero-range w-full"
+                    disabled={!selectedFile.duration}
+                  />
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewTo(0)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      开头
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewBy(-5)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <ChevronLeft size={14} />
+                        退 5s
+                      </span>
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewBy(-1)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      退 1s
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewBy(1)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      进 1s
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewBy(5)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        进 5s
+                        <ChevronRight size={14} />
+                      </span>
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => seekPreviewTo(selectedFile.duration || 0)}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame || !selectedFile.duration}
+                    >
+                      结尾
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">当前已确认的框选起始帧</div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        {selectedFile.selectionFrame
+                          ? `${formatDuration(selectedFile.selectionFrame.time)}（${selectedFile.selectionFrame.time.toFixed(2)}s）`
+                          : '尚未确认'}
+                      </div>
+                    </div>
+                    <Chip variant="soft" color={hasConfirmedSelectionFrame ? 'success' : 'warning'}>
+                      {hasConfirmedSelectionFrame ? '已确认' : '未确认'}
+                    </Chip>
+                  </div>
+
+                  {selectedFile.selectionFrame ? (
+                    <img
+                      src={selectedFile.selectionFrame.imageUrl}
+                      alt="已确认的框选起始帧"
+                      className="w-full rounded-2xl border border-slate-200 bg-black object-contain shadow-[0_14px_40px_rgba(15,23,42,0.12)]"
+                    />
+                  ) : null}
+
+                  <div className="mt-3 text-sm text-slate-600">
+                    这张静态画面才是下一步框选目标球员时真正使用的帧。
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-orange-100 bg-orange-50/80 p-4 text-sm text-slate-700">
+                  <div className="mb-2 font-semibold text-slate-900">选帧建议</div>
+                  <ul className="space-y-2 leading-6">
+                    <li>优先选目标球员最早且清晰出镜的一帧，减少漏掉前面回合的风险。</li>
+                    <li>选择完整出镜、没有严重遮挡、身体轮廓清楚的一帧。</li>
+                    <li>尽量避开背身、模糊、运动拖影明显的时刻。</li>
+                  </ul>
+
+                  {hasConfirmedSelectionFrame ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => {
+                        const updatedFile: VideoFile = {
+                          ...selectedFile,
+                          selectionFrameConfirmed: false,
+                          targetPlayerBox: null,
+                        };
+                        syncSelectedFile(updatedFile);
+                      }}
+                      isDisabled={disabled || loading || isProcessing || isCapturingFrame}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <RotateCcw size={14} />
+                        重新选择起始帧
+                      </span>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
 

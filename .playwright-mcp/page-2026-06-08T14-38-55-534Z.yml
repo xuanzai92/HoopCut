@@ -1,0 +1,195 @@
+- main [ref=e3]:
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e16]: 片段结果已就绪
+        - generic [ref=e17]:
+          - heading "自动剪辑结果" [level=1] [ref=e18]
+          - paragraph [ref=e19]: 当前页面的主交付是全部相关片段，包含已确认的进球、助攻，以及为了减少漏剪而保留的待确认片段。拼接视频只作为附加结果保留。
+      - generic [ref=e20]:
+        - button "返回首页" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]:
+            - img
+            - text: 返回首页
+        - button "刷新" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]:
+            - img
+            - text: 刷新
+        - button "分享" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]:
+            - img
+            - text: 分享
+        - button "下载全部片段 (1)" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]:
+            - img
+            - text: 下载全部片段 (1)
+        - button "下载附加拼接视频" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]:
+            - img
+            - text: 下载附加拼接视频
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - generic [ref=e36]:
+                - img [ref=e37]
+                - heading "自动导出的相关片段" [level=2] [ref=e40]
+              - paragraph [ref=e41]: 这是当前任务最重要的交付结果。助攻片段会从目标球员的控球或传球动作前开始；待确认片段也会一并保留，优先减少漏剪。
+              - paragraph [ref=e42]: "下载的 ZIP 包会额外附带 `manifest.json`，方便你按片段角色、时间和原因快速验收。"
+              - generic [ref=e43]:
+                - generic [ref=e44]: 目标球员进球 1
+                - generic [ref=e45]: 目标球员助攻 0
+                - generic [ref=e46]: 待确认 0
+            - generic [ref=e47]:
+              - button "下载全部片段 ZIP" [ref=e48] [cursor=pointer]:
+                - generic [ref=e49]:
+                  - img
+                  - text: 下载全部片段 ZIP
+              - button "下载所选 (1)" [ref=e50] [cursor=pointer]:
+                - generic [ref=e51]:
+                  - img
+                  - text: 下载所选 (1)
+          - generic [ref=e52]:
+            - button "全选" [ref=e53] [cursor=pointer]
+            - button "清空" [ref=e54] [cursor=pointer]
+          - generic [ref=e56]:
+            - generic [ref=e58]:
+              - generic [ref=e59]:
+                - heading "目标球员进球" [level=3] [ref=e60]
+                - generic [ref=e62]: "1"
+              - paragraph [ref=e63]: 已经确认归因到目标球员的进球片段。
+            - generic [ref=e65]:
+              - generic [ref=e66] [cursor=pointer]:
+                - checkbox "片段 1 5.59s - 13.59s · 8.00s" [checked] [ref=e67]
+                - generic [ref=e68]:
+                  - generic [ref=e69]: 片段 1
+                  - generic [ref=e70]: 5.59s - 13.59s · 8.00s
+              - generic [ref=e71]:
+                - generic [ref=e73]: 目标球员进球
+                - button "单独下载" [ref=e74] [cursor=pointer]:
+                  - generic [ref=e75]:
+                    - img
+                    - text: 单独下载
+        - generic [ref=e76]:
+          - heading "附加拼接视频" [level=3] [ref=e78]
+          - generic [ref=e79]:
+            - button [ref=e82]:
+              - img [ref=e83]
+            - generic:
+              - generic:
+                - slider: "9"
+              - generic:
+                - generic:
+                  - button:
+                    - img
+                  - button:
+                    - img
+                  - generic:
+                    - slider: "1"
+                  - generic: 00:09 / 00:09
+                - generic:
+                  - button:
+                    - img
+                  - button:
+                    - img
+                  - button:
+                    - img
+                  - button:
+                    - img
+                  - button:
+                    - img
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - generic [ref=e88]: Diagnostics
+            - heading "结果诊断" [level=2] [ref=e89]
+          - generic [ref=e90]: 已导出与目标球员相关的进球和助攻片段。
+        - generic [ref=e92]:
+          - tablist [ref=e94]:
+            - tab "相关片段 (1)" [selected] [ref=e95] [cursor=pointer]
+            - tab "全场进球 (1)" [ref=e96] [cursor=pointer]
+            - tab "任务信息" [ref=e97] [cursor=pointer]
+          - tabpanel "相关片段 (1)" [ref=e98]:
+            - generic [ref=e99]:
+              - generic [ref=e100]:
+                - generic [ref=e101]:
+                  - heading "目标球员进球" [level=3] [ref=e102]
+                  - generic [ref=e104]: "1"
+                - generic [ref=e106]:
+                  - generic [ref=e107]:
+                    - generic [ref=e108]: 镜头 1
+                    - generic [ref=e109]: 11.59s · 帧 348
+                  - generic [ref=e110]:
+                    - generic [ref=e112]: 目标球员进球
+                    - generic [ref=e113]: 高光置信度 71%
+                    - generic [ref=e115]: 目标可见
+              - generic [ref=e116]:
+                - generic [ref=e117]:
+                  - heading "目标球员助攻" [level=3] [ref=e118]
+                  - generic [ref=e120]: "0"
+                - generic [ref=e121]: 当前没有确认的目标球员助攻片段
+              - generic [ref=e122]:
+                - generic [ref=e123]:
+                  - heading "待确认片段" [level=3] [ref=e124]
+                  - generic [ref=e126]: "0"
+                - generic [ref=e127]: 当前没有待确认片段
+      - generic [ref=e129]:
+        - generic [ref=e131]:
+          - generic [ref=e132]:
+            - generic [ref=e133]: Overview
+            - heading "相关片段概览" [level=3] [ref=e134]
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]:
+                - generic [ref=e138]: 相关片段
+                - img [ref=e139]
+              - generic [ref=e142]: "1"
+            - generic [ref=e143]:
+              - generic [ref=e144]:
+                - generic [ref=e145]: 目标球员进球
+                - img [ref=e146]
+              - generic [ref=e152]: "1"
+            - generic [ref=e153]:
+              - generic [ref=e154]:
+                - generic [ref=e155]: 目标球员助攻
+                - img [ref=e156]
+              - generic [ref=e163]: "0"
+            - generic [ref=e164]:
+              - generic [ref=e165]:
+                - generic [ref=e166]: 待确认片段
+                - img [ref=e167]
+              - generic [ref=e170]: "0"
+          - generic [ref=e171]:
+            - generic [ref=e172]:
+              - generic [ref=e173]: 人物跟踪覆盖率
+              - generic [ref=e174]: 100.0%
+            - progressbar [ref=e175]
+          - generic [ref=e176]: 已自动导出 1 个相关片段。
+        - generic [ref=e178]:
+          - generic [ref=e179]:
+            - generic [ref=e180]: Output
+            - heading "交付信息" [level=3] [ref=e181]
+          - generic [ref=e182]:
+            - generic [ref=e183]: 主交付结果：相关片段 ZIP 包
+            - generic [ref=e184]: 相关片段数量：1
+            - generic [ref=e185]: 附加拼接视频：已生成
+            - generic [ref=e186]: 标注视频：未生成
+            - generic [ref=e187]: 输出文件大小：985.18 KB
+            - generic [ref=e188]:
+              - text: 初始选区：
+              - generic [ref=e189]: 72 x 144
+            - generic [ref=e190]:
+              - text: 跟踪起点：
+              - generic [ref=e191]: 00:12 (12.10s)
+            - generic [ref=e192]: 系统会优先把全部相关片段切出来；拼接高光只是附加结果，不是主交付。
+        - generic [ref=e194]:
+          - generic [ref=e195]:
+            - generic [ref=e196]: Moments
+            - heading "自动导出的相关片段" [level=3] [ref=e197]
+          - generic [ref=e200]:
+            - generic [ref=e201]:
+              - generic [ref=e202]: 镜头 1
+              - generic [ref=e203]: 11.59s · 帧 348
+            - generic [ref=e204]:
+              - generic [ref=e206]: 目标球员进球
+              - generic [ref=e207]: 高光置信度 71%

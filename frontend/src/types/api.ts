@@ -23,6 +23,20 @@ export interface SelectionFrame {
   height: number;
   time: number;
   frame?: number;
+  source?: 'local' | 'smart';
+  recommended?: boolean;
+  recommendationScore?: number;
+  suggestedBox?: PlayerSelectionBox | null;
+}
+
+export interface ReusableVideoSource {
+  taskId: string;
+  fileId: string;
+  filename: string;
+  fileSize: number;
+  mimeType?: string;
+  sourceStreamUrl: string;
+  targetPlayerBox?: PlayerSelectionBox | null;
 }
 
 export interface TrackingSummary {
@@ -38,7 +52,18 @@ export interface TrackingSummary {
   latestStatus?: string;
   startFrame?: number;
   startTime?: number;
+  referenceFrames?: number[];
+  primedReferenceSamples?: number;
+  runtimeReferenceSamples?: number;
   error?: string;
+}
+
+export interface AutoRetrySummary {
+  attempted: number;
+  used: boolean;
+  initialSelectionTime?: number | null;
+  finalSelectionTime?: number | null;
+  selectedRun?: string;
 }
 
 export interface ShotTimestamp {
@@ -48,8 +73,28 @@ export interface ShotTimestamp {
   owner?: 'target' | 'unknown';
   owner_confidence?: number;
   target_visible?: boolean;
-  highlight_role?: 'score' | 'assist' | 'none';
+  highlight_role?: 'score' | 'assist' | 'possible' | 'none';
   highlight_confidence?: number;
+  involvement_start_frame?: number | null;
+  involvement_end_frame?: number | null;
+  involvement_start_timestamp?: number | null;
+  involvement_end_timestamp?: number | null;
+  candidate_reason?: string;
+  candidate_source?: string;
+}
+
+export interface HighlightClip {
+  filename: string;
+  index: number;
+  start: number;
+  end: number;
+  duration: number;
+  shotFrame: number;
+  shotTimestamp: number;
+  highlightRole: 'score' | 'assist' | 'possible' | 'none';
+  candidateReason?: string;
+  candidateSource?: string | null;
+  highlightConfidence?: number | null;
 }
 
 // 视频上传响应 - 匹配Flask后端格式
@@ -67,6 +112,7 @@ export type BackendTaskStatus =
   | 'pending'
   | 'starting'
   | 'detecting'
+  | 'attributing'
   | 'generating'
   | 'completed'
   | 'failed';
@@ -76,6 +122,7 @@ export type ProcessingStage =
   | 'uploading'
   | 'analyzing'
   | 'detecting'
+  | 'attributing'
   | 'generating'
   | 'finalizing'
   | 'completed';
@@ -86,6 +133,8 @@ export interface ProgressInfo {
   stage: string;
   status: BackendTaskStatus;
   completed: boolean;
+  createdAt?: string;
+  updatedAt?: string;
   result?: ProcessingResult;
   error?: string;
 }
@@ -107,6 +156,8 @@ export interface DetectionStats {
   target_scores?: number;
   target_assists?: number;
   target_highlights?: number;
+  possible_highlights?: number;
+  related_highlights?: number;
 }
 
 // 高光片段类型
@@ -149,27 +200,102 @@ export interface ProcessingResult {
   targetScores?: number;
   targetAssists?: number;
   targetHighlights?: number;
+  possibleHighlights?: number;
+  relatedHighlights?: number;
+  reviewCandidateHighlights?: number;
   accuracy?: number;
   highlightVideo?: string | null;
   annotatedVideo?: string | null;
   timestamps?: ShotTimestamp[];
+  debugTimestamps?: ShotTimestamp[];
   allMadeTimestamps?: ShotTimestamp[];
+  clips?: HighlightClip[];
+  debugClips?: HighlightClip[];
   fileSize?: number;
   targetPlayerBox?: PlayerSelectionBox | null;
+  effectiveTargetPlayerBox?: PlayerSelectionBox | null;
   tracking?: TrackingSummary;
+  annotatedVideoReason?: string | null;
+  autoRetry?: AutoRetrySummary | null;
+  selectionSummary?: {
+    mode?: string;
+    confirmed?: number;
+    possible?: number;
+  };
+  diagnostics?: {
+    outcome?: string;
+    summary?: string;
+    reasons?: string[];
+    recommendedActions?: string[];
+    counts?: {
+      attempts?: number;
+      madeShots?: number;
+      selectedClips?: number;
+      reviewCandidates?: number;
+      possibleHighlights?: number;
+    };
+    trackingCoverage?: number;
+  };
+  pipeline?: {
+    scan?: {
+      mode?: string;
+      fullVideoScanned?: boolean;
+      trackerEnabled?: boolean;
+      trackingStartTime?: number | null;
+      trackingStartFrame?: number | null;
+      totalShotEvents?: number;
+      madeShotEvents?: number;
+      targetVisibleEvents?: number;
+    };
+    attribution?: {
+      selectionMode?: string;
+      confirmedHighlights?: number;
+      possibleHighlights?: number;
+      confirmedScores?: number;
+      confirmedAssists?: number;
+      reviewCandidates?: number;
+      trackingCoverage?: number;
+    };
+    export?: {
+      selectedClipCount?: number;
+      selectedHighlights?: number;
+      clipWindowBeforeSeconds?: number;
+      clipWindowAfterSeconds?: number;
+      scoreClips?: number;
+      assistClips?: number;
+      possibleClips?: number;
+    };
+  };
   message?: string;
+}
+
+export interface DownloadClipArchiveParams {
+  filenames?: string[];
+  scope?: 'confirmed' | 'debug' | 'all';
 }
 
 // 健康检查响应
 export interface HealthCheckResponse {
   status: string;
   timestamp: string;
+  message: string;
   components: {
-    ai_model: boolean;
-    storage: boolean;
-    processing: boolean;
+    upload_folder: boolean;
+    output_folder: boolean;
+    model_file: boolean;
+    active_tasks: number;
   };
-  version: string;
+  runtime?: {
+    apiVersion: number;
+    backendHost: string;
+    backendPort: number;
+    frontendPort: string;
+    startedAt: string;
+    supports: {
+      uploadCandidates: boolean;
+      scopedClipArchive: boolean;
+    };
+  };
 }
 
 // 视频上传参数
