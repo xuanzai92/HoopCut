@@ -8,13 +8,13 @@ import numpy as np
 BBox = Tuple[int, int, int, int]
 ShotAttribution = Dict[str, object]
 
-TRACKER_IDENTITY_THRESHOLD = 0.62
-TRACKER_HISTOGRAM_FLOOR = 0.48
-SEARCH_MATCH_THRESHOLD = 0.65
-SEARCH_HISTOGRAM_FLOOR = 0.52
+TRACKER_IDENTITY_THRESHOLD = 0.58
+TRACKER_HISTOGRAM_FLOOR = 0.42
+SEARCH_MATCH_THRESHOLD = 0.62
+SEARCH_HISTOGRAM_FLOOR = 0.46
 REVALIDATION_SWITCH_DELTA = 0.10
-LOCAL_REVIEW_MATCH_THRESHOLD = 0.58
-LOCAL_REVIEW_HISTOGRAM_FLOOR = 0.45
+LOCAL_REVIEW_MATCH_THRESHOLD = 0.55
+LOCAL_REVIEW_HISTOGRAM_FLOOR = 0.40
 LOCAL_REVIEW_STRONG_SCORE = 0.58
 PARTIAL_ASSIST_EVIDENCE_THRESHOLD = 0.42
 ASSIST_CONFIRM_TOLERANCE = 0.03
@@ -848,14 +848,14 @@ class TargetPlayerTracker:
         max_missing_frames: int = 12,
         start_frame: int = 0,
         start_time: float = 0.0,
-        revalidate_interval: int = 10,
-        reacquire_interval: int = 5,
+        revalidate_interval: int = 6,
+        reacquire_interval: int = 3,
     ):
         self.selection_box = selection_box
         self.max_missing_frames = max_missing_frames
         self.start_frame = max(int(start_frame), 0)
         self.start_time = max(float(start_time), 0.0)
-        self.revalidate_interval = max(int(revalidate_interval), 4)
+        self.revalidate_interval = max(int(revalidate_interval), 3)
         self.reacquire_interval = max(int(reacquire_interval), 2)
 
         self.tracker = None
