@@ -26,6 +26,7 @@ export const VideoPlayerSelector: React.FC<VideoPlayerSelectorProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [fps, setFps] = useState(30);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<Point | null>(null);
   const [tempBox, setTempBox] = useState<PlayerSelectionBox | null>(null);
@@ -36,6 +37,14 @@ export const VideoPlayerSelector: React.FC<VideoPlayerSelectorProps> = ({
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
+
+      // 尝试从视频元数据推断帧率，常见值：24, 25, 30, 50, 60
+      const totalFrames = video.duration * 30; // 粗略估算
+      if (video.duration > 0) {
+        // HTML5 video 没有直接的 FPS 属性，使用常见值 30 作为默认
+        // 后端会用实际 FPS 重新计算，这里主要保证坐标正确
+        setFps(30);
+      }
     };
 
     const handleTimeUpdate = () => {
@@ -141,7 +150,7 @@ export const VideoPlayerSelector: React.FC<VideoPlayerSelectorProps> = ({
       frameWidth: videoRef.current.videoWidth,
       frameHeight: videoRef.current.videoHeight,
       selectionTime: currentTime,
-      selectionFrame: Math.round(currentTime * 30),
+      selectionFrame: Math.round(currentTime * fps),
     });
   };
 
