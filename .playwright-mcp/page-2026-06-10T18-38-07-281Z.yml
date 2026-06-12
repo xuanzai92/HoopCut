@@ -1,0 +1,46 @@
+- main [ref=e3]:
+  - generic [ref=e8]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: H
+          - generic [ref=e16]:
+            - paragraph [ref=e17]: HoopCut
+            - paragraph [ref=e18]: 篮球高光剪片工具
+        - generic [ref=e20]: 本地视频处理
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - generic [ref=e25]: 默认手动时间点
+            - generic [ref=e27]: AI 自动模式可选
+          - generic [ref=e28]:
+            - heading "直接自己选时间点， 把片段切出来。" [level=1] [ref=e29]:
+              - text: 直接自己选时间点，
+              - text: 把片段切出来。
+            - paragraph [ref=e30]: 默认主流程直接让你上传视频、拖到关键时刻、加入待剪列表并导出，不再先塞 AI 推荐画面和一堆解释。只有你不想自己找时间点时，再切到自动模式。
+          - generic [ref=e31]:
+            - button "直接开始剪片" [ref=e32] [cursor=pointer]
+            - generic [ref=e33]: 手动模式更快，也更符合你现在的使用方式。
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e37]: 模式
+            - img [ref=e38]
+          - button "默认主流程 自己选时间点剪片 适合你已经知道要剪哪些球，想要更快、更可控、更少干扰。" [ref=e41]:
+            - generic [ref=e42]: 默认主流程
+            - generic [ref=e43]: 自己选时间点剪片
+            - generic [ref=e44]: 适合你已经知道要剪哪些球，想要更快、更可控、更少干扰。
+          - button "可选高级模式 AI 自动找目标片段 只有你不想手动找时间点时，再让系统跑人物锁定、找球和归因。" [ref=e45]:
+            - generic [ref=e46]: 可选高级模式
+            - generic [ref=e47]: AI 自动找目标片段
+            - generic [ref=e48]: 只有你不想手动找时间点时，再让系统跑人物锁定、找球和归因。
+    - generic [ref=e52]:
+      - img [ref=e54]
+      - generic [ref=e57]:
+        - heading "上传比赛视频" [level=2] [ref=e58]
+        - paragraph [ref=e59]: 默认主流程不再让系统先帮你挑“优选画面”。你只需要上传视频，然后自己拖到关键时间点直接切片。
+      - generic [ref=e60]:
+        - button "选择本地视频" [ref=e61] [cursor=pointer]:
+          - generic [ref=e62]:
+            - img
+            - text: 选择本地视频
+        - generic [ref=e63]: 支持大文件上传，本地处理，不会把视频发到远端。

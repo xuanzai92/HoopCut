@@ -1,0 +1,114 @@
+- main [ref=e3]:
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e16]: 处理完成
+        - generic [ref=e17]:
+          - heading "处理进度" [level=1] [ref=e18]
+          - paragraph [ref=e19]: 当前页面只负责展示手动时间点导出是否已经完成。处理结束后，直接去结果页验收片段；如果起止不合适，再回首页调整时间点或前后保留时间。
+      - generic [ref=e20]:
+        - button "返回首页" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]:
+            - img
+            - text: 返回首页
+        - button "查看结果" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]:
+            - img
+            - text: 查看结果
+        - button "重新选时间点" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]:
+            - img
+            - text: 重新选时间点
+        - button "刷新" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]:
+            - img
+            - text: 刷新
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e35]: 处理完成
+            - heading "处理完成" [level=2] [ref=e36]
+            - paragraph [ref=e37]: 处理完成
+          - generic [ref=e38]:
+            - generic [ref=e39]:
+              - generic [ref=e40]:
+                - generic [ref=e41]: 整体进度
+                - generic [ref=e42]: 100%
+              - progressbar [ref=e43]
+            - generic [ref=e45]:
+              - generic [ref=e46]: 阶段
+              - generic [ref=e47]: 4 / 4
+        - generic [ref=e48]:
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - img [ref=e53]
+              - generic [ref=e65]: 完成
+            - generic [ref=e66]: 准备任务
+            - paragraph [ref=e67]: 检查源视频和导出窗口设置。
+          - generic [ref=e69]:
+            - generic [ref=e70]:
+              - img [ref=e72]
+              - generic [ref=e76]: 完成
+            - generic [ref=e77]: 导出片段
+            - paragraph [ref=e78]: 按你选择的时间点逐个切出片段，并整理拼接视频。
+          - generic [ref=e80]:
+            - generic [ref=e81]:
+              - img [ref=e83]
+              - generic [ref=e87]: 完成
+            - generic [ref=e88]: 整理结果
+            - paragraph [ref=e89]: 正在收尾当前导出任务。
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - img [ref=e94]
+              - generic [ref=e98]: 完成
+            - generic [ref=e99]: 处理完成
+            - paragraph [ref=e100]: 手动选择的片段已经可查看或下载。
+      - generic [ref=e101]:
+        - generic [ref=e102]:
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - generic [ref=e106]:
+                - generic [ref=e107]: 任务
+                - heading "当前任务" [level=3] [ref=e108]
+              - generic [ref=e110]: 已完成
+            - generic [ref=e111]:
+              - generic [ref=e112]:
+                - generic [ref=e113]: 当前阶段
+                - generic [ref=e114]: 处理完成
+              - generic [ref=e115]:
+                - generic [ref=e116]: 完成时间
+                - generic [ref=e117]: 2026/6/11 02:32:39
+            - generic [ref=e118]: 这页只用来确认手动时间点导出是否完成。真正的验收动作放在结果页：先检查片段边界；如果不合适，再回首页调整时间点或前后保留时间。
+          - generic [ref=e120]:
+            - generic [ref=e121]:
+              - generic [ref=e122]: 交付
+              - heading "交付概览" [level=3] [ref=e123]
+            - generic [ref=e124]: 当前交付：手动时间点导出
+            - generic [ref=e125]:
+              - generic [ref=e126]:
+                - generic [ref=e127]:
+                  - generic [ref=e128]: 主交付片段
+                  - img [ref=e129]
+                - generic [ref=e133]: "2"
+              - generic [ref=e134]:
+                - generic [ref=e135]:
+                  - generic [ref=e136]: 已选时间点
+                  - img [ref=e137]
+                - generic [ref=e140]: "2"
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: 拼接视频
+                  - img [ref=e144]
+                - generic [ref=e147]: 已生成
+        - generic [ref=e149]:
+          - generic [ref=e150]: 手动时间点导出已经完成。先去结果页验收每个片段；如果你想快速过一遍整体顺序，也可以顺手下载拼接视频。
+          - generic [ref=e151]:
+            - button "去结果页验收片段" [ref=e152] [cursor=pointer]:
+              - generic [ref=e153]:
+                - img
+                - text: 去结果页验收片段
+            - button "回首页调整时间点" [ref=e154] [cursor=pointer]:
+              - generic [ref=e155]:
+                - img
+                - text: 回首页调整时间点
