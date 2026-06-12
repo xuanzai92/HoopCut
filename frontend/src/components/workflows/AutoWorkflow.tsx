@@ -148,35 +148,22 @@ export const AutoWorkflow: React.FC<AutoWorkflowProps> = ({
       )}
 
       {hasVideo && (
-        <Card className="p-6">
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold mb-2">片段参数</h3>
-              <ConfigPanel
-                beforeSeconds={6}
-                afterSeconds={2}
-                onBeforeSecondsChange={() => {}}
-                onAfterSecondsChange={() => {}}
-                disabled
-              />
-              <p className="text-sm text-gray-500 mt-2">
-                进球前保留 6 秒，进球后保留 2 秒
-              </p>
-            </div>
-
-            <Button
-              color="primary"
-              size="lg"
-              className="w-full"
-              onPress={handleStartProcessing}
-              isDisabled={!canStartProcessing}
-              isLoading={isProcessing}
-              endContent={<ArrowRight size={20} />}
-            >
-              {isProcessing ? '处理中...' : '开始处理'}
-            </Button>
-          </div>
-        </Card>
+        <div className="space-y-4">
+          <Button
+            color="primary"
+            size="lg"
+            className="w-full"
+            onPress={handleStartProcessing}
+            isDisabled={!canStartProcessing}
+            isLoading={isProcessing}
+            endContent={<ArrowRight size={20} />}
+          >
+            {isProcessing ? '处理中...' : '开始处理'}
+          </Button>
+          <p className="text-sm text-gray-500 text-center">
+            默认：进球前保留 6 秒，进球后保留 2 秒
+          </p>
+        </div>
       )}
     </div>
   );
