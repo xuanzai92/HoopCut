@@ -1888,6 +1888,17 @@ class BasketballShotDetector:
                             )
                             target_visible = bool(target_visible or local_target_visible)
 
+                            # 局部验证优先级更高 - 它是事后核查，直接在原图上重新匹配
+                            # 如果局部验证明确确认了目标球员的角色，以局部验证为准
+                            if local_review and local_highlight_role == 'score' and local_highlight_confidence >= 0.64:
+                                owner = 'target'
+                                owner_confidence = max(owner_confidence, local_owner_confidence)
+                                highlight_role = 'score'
+                                highlight_confidence = max(highlight_confidence, local_highlight_confidence)
+                            elif local_review and local_highlight_role == 'assist' and local_highlight_confidence >= 0.58:
+                                highlight_role = 'assist'
+                                highlight_confidence = max(highlight_confidence, local_highlight_confidence)
+
                             if is_made:
                                 makes += 1
                             if owner == 'target':
