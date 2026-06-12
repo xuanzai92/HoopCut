@@ -16,21 +16,21 @@ const MODE_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    key: 'manual',
+    key: 'auto',
     label: '默认主流程',
-    title: '自己选时间点剪片',
-    description: '适合你已经知道要剪哪些球，想要更快、更可控、更少干扰。',
+    title: 'AI 自动找目标片段',
+    description: '框选目标球员，系统自动跑人物锁定、找球和归因，生成高光集锦。',
   },
   {
-    key: 'auto',
-    label: '可选高级模式',
-    title: 'AI 自动找目标片段',
-    description: '只有你不想手动找时间点时，再让系统跑人物锁定、找球和归因。',
+    key: 'manual',
+    label: '可选手动模式',
+    title: '自己选时间点剪片',
+    description: '适合你已经知道要剪哪些球，直接标记时间点，更快、更可控。',
   },
 ];
 
 export const Home: React.FC = () => {
-  const [activeMode, setActiveMode] = useState<ProcessingMode>('manual');
+  const [activeMode, setActiveMode] = useState<ProcessingMode>('auto');
   const [reusableSource, setReusableSource] = useState<ReusableVideoSource | null>(null);
   const [isLoadingReusableSource, setIsLoadingReusableSource] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
