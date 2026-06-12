@@ -10,7 +10,7 @@ class VideoProcessor:
     """
     视频剪辑和拼接处理器
     """
-    CONFIRMED_HIGHLIGHT_ROLES = {'score', 'assist'}
+    CONFIRMED_HIGHLIGHT_ROLES = {'score', 'assist', 'manual'}
     DEFAULT_INVOLVEMENT_LEAD_SECONDS = 1.0
     ASSIST_INVOLVEMENT_LEAD_SECONDS = 2.0
     TARGET_RELATED_REVIEW_LEAD_SECONDS = 1.5

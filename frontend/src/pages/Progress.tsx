@@ -55,6 +55,12 @@ export const Progress: React.FC = () => {
     refetchInterval: false,
   });
 
+  const processingMode = progress?.processingMode ?? progress?.result?.processingMode ?? 'auto';
+  const reuseActionLabel = processingMode === 'manual' ? '重新选时间点' : '重新框选并重跑';
+  const heroDescription = processingMode === 'manual'
+    ? '当前页面只负责展示手动时间点导出是否已经完成。处理结束后，直接去结果页验收片段；如果起止不合适，再回首页调整时间点或前后保留时间。'
+    : '当前页面只负责展示自动处理是否已经完成。处理结束后，直接去结果页检查已确认的进球、助攻片段；只有怀疑漏剪时，再看高级排错区。';
+
   useEffect(() => {
     if (!fileId) return;
 
@@ -67,10 +73,13 @@ export const Progress: React.FC = () => {
 
       if (data.data.status !== lastStatusRef.current) {
         if (data.data.status === 'completed') {
+          const completedMode = data.data.processingMode ?? data.data.result?.processingMode ?? 'auto';
           addNotification({
             type: 'success',
             title: '处理完成',
-            message: '本地处理已完成，可以查看结果了。',
+            message: completedMode === 'manual'
+              ? '手动时间点片段已经导出完成，可以查看结果了。'
+              : '本地处理已完成，可以查看结果了。',
           });
         } else if (data.data.status === 'failed') {
           addNotification({
@@ -203,7 +212,7 @@ export const Progress: React.FC = () => {
                   处理进度
                 </h1>
                 <p className="max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                  当前页面只负责展示自动处理是否已经完成。处理结束后，直接去结果页检查已确认的进球、助攻片段；只有怀疑漏剪时，再看高级排错区。
+                  {heroDescription}
                 </p>
               </div>
             </div>
@@ -227,7 +236,7 @@ export const Progress: React.FC = () => {
                 <Button variant="secondary" onClick={handleReuseSource}>
                   <span className="inline-flex items-center gap-2">
                     <RefreshCcw size={16} />
-                    重新框选并重跑
+                    {reuseActionLabel}
                   </span>
                 </Button>
               ) : null}
@@ -246,13 +255,15 @@ export const Progress: React.FC = () => {
               stage={normalizedStage}
               progress={progress.progress}
               message={progress.stage}
-              totalSteps={6}
+              processingMode={processingMode}
+              totalSteps={processingMode === 'manual' ? 4 : 7}
             />
 
             <StatusDisplay
               task={{
                 id: fileId,
                 status: normalizedStatus,
+                processingMode,
                 stage: progress.stage,
                 progress: progress.progress,
                 message: progress.stage || '',

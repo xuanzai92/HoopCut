@@ -55,6 +55,9 @@ const normalizeRecommendedAction = (
 };
 
 const getClipDisplay = (clip: HighlightClip) => {
+  if (clip.highlightRole === 'manual') {
+    return { label: '手动片段', color: 'warning' as const };
+  }
   if (clip.highlightRole === 'assist') {
     return { label: '目标球员助攻', color: 'warning' as const };
   }
@@ -236,7 +239,9 @@ export const Result: React.FC = () => {
       addNotification({
         type: 'success',
         title: '下载开始',
-        message: '已确认片段拼接视频下载已开始',
+        message: result?.processingMode === 'manual'
+          ? '手动片段拼接视频下载已开始'
+          : '已确认片段拼接视频下载已开始',
       });
     }),
   );
@@ -286,9 +291,15 @@ export const Result: React.FC = () => {
         { scope: 'confirmed' },
         confirmedClips.length,
         {
-          emptyMessage: '当前没有已确认的进球或助攻片段',
-          successTitle: '已确认片段下载完成',
-          successMessage: '已打包下载已确认的进球和助攻片段',
+          emptyMessage: result?.processingMode === 'manual'
+            ? '当前没有可打包下载的手动片段'
+            : '当前没有已确认的进球或助攻片段',
+          successTitle: result?.processingMode === 'manual'
+            ? '手动片段下载完成'
+            : '已确认片段下载完成',
+          successMessage: result?.processingMode === 'manual'
+            ? '已打包下载你手动选择时间点导出的片段'
+            : '已打包下载已确认的进球和助攻片段',
         },
       );
     }),
@@ -364,6 +375,252 @@ export const Result: React.FC = () => {
             </div>
           </div>
         </Card>
+      </div>
+    );
+  }
+
+  const isManualMode = result.processingMode === 'manual';
+
+  if (isManualMode) {
+    const manualMoments = result.manualMoments ?? [];
+    const manualClipCount = confirmedClips.length;
+    const clipWindowBeforeSeconds = result.pipeline?.export?.clipWindowBeforeSeconds ?? 0;
+    const clipWindowAfterSeconds = result.pipeline?.export?.clipWindowAfterSeconds ?? 0;
+    const activeClip = confirmedClips.find((clip) => clip.filename === activeClipFilename) ?? confirmedClips[0] ?? null;
+    const activeClipIndex = activeClip ? confirmedClips.findIndex((clip) => clip.filename === activeClip.filename) : -1;
+    const canPreviewPreviousClip = activeClipIndex > 0;
+    const canPreviewNextClip = activeClipIndex >= 0 && activeClipIndex < confirmedClips.length - 1;
+    const previewAdjacentClip = (offset: number) => {
+      if (activeClipIndex < 0) {
+        return;
+      }
+
+      const nextClip = confirmedClips[activeClipIndex + offset];
+      if (nextClip) {
+        setActiveClipFilename(nextClip.filename);
+      }
+    };
+
+    return (
+      <div className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#fff8f1_0%,#fffdf8_18%,#f8fafc_44%,#eef2ff_100%)]">
+        {hasError ? (
+          <div className="fixed left-1/2 top-4 z-50 w-full max-w-md -translate-x-1/2 px-4">
+            <ErrorAlert
+              title="操作失败"
+              message={error?.message || '发生未知错误'}
+              type="error"
+              showIcon
+              closable
+              onClose={clearError}
+            />
+          </div>
+        ) : null}
+
+        <div className="relative isolate">
+          <div className="absolute left-1/2 top-0 -z-10 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-orange-300/20 blur-3xl" />
+          <div className="absolute right-[-100px] top-[120px] -z-10 h-[320px] w-[320px] rounded-full bg-indigo-300/18 blur-3xl" />
+
+          <div className="mx-auto max-w-7xl px-4 pb-16 pt-8 sm:px-6 lg:px-8 lg:pt-12">
+            <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Chip variant="soft" color="success">手动剪片结果</Chip>
+                  <Chip variant="soft" color="warning">已导出 {manualClipCount} 个片段</Chip>
+                </div>
+                <div className="space-y-3">
+                  <h1 className="font-serif text-5xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-6xl">
+                    手动剪片结果
+                  </h1>
+                  <p className="max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
+                    这里不再展示人物归因、跟踪和高级排错。你只需要验收自己选择时间点导出的片段，边界不合适就回首页调整。
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button variant="ghost" onClick={() => navigate('/')}>
+                  <span className="inline-flex items-center gap-2">
+                    <ArrowLeft size={16} />
+                    返回首页
+                  </span>
+                </Button>
+                <Button variant="ghost" onClick={() => void handleRefresh()}>
+                  <span className="inline-flex items-center gap-2">
+                    <RefreshCcw size={16} />
+                    刷新
+                  </span>
+                </Button>
+                <Button variant="secondary" onClick={handleReuseSource}>
+                  <span className="inline-flex items-center gap-2">
+                    <RefreshCcw size={16} />
+                    继续调整时间点
+                  </span>
+                </Button>
+                <Button variant="primary" isDisabled={actionLoading || manualClipCount === 0} onClick={() => void handleDownloadConfirmedClips()}>
+                  <span className="inline-flex items-center gap-2">
+                    <Download size={16} />
+                    {actionLoading ? '下载中...' : `下载片段 ZIP (${manualClipCount})`}
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            <Card className="mb-6 border border-white/40 bg-white/82 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))]">
+                <div className="space-y-2">
+                  <div className="text-sm uppercase tracking-[0.18em] text-slate-400">说明</div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">这次结果完全来自你手动选择的时间点</h2>
+                  <p className="text-sm leading-6 text-slate-600">
+                    {result.diagnostics?.summary || result.message || '系统没有再做自动找球或人物归因。'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="text-sm text-slate-500">主交付片段</div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{manualClipCount}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="text-sm text-slate-500">已选时间点</div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{manualMoments.length}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="text-sm text-slate-500">前置保留</div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{clipWindowBeforeSeconds.toFixed(1)}s</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="text-sm text-slate-500">后置保留</div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{clipWindowAfterSeconds.toFixed(1)}s</div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="space-y-6">
+              {activeClip ? (
+                <Card className="border border-white/40 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6">
+                  <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-slate-900">
+                        <CheckSquare size={18} className="text-orange-500" />
+                        <h2 className="text-xl font-semibold tracking-tight">导出片段预览</h2>
+                      </div>
+                      <p className="text-sm leading-6 text-slate-500">
+                        先逐个看片段边界是否合适。只要发现起止不对，就回首页调整时间点或前后保留时间。
+                      </p>
+                    </div>
+                    {result.highlightVideo ? (
+                      <Button variant="secondary" isDisabled={actionLoading} onClick={() => void handleDownload()}>
+                        <span className="inline-flex items-center gap-2">
+                          <Download size={16} />
+                          下载拼接视频
+                        </span>
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <div className="mb-6 space-y-4 rounded-3xl border border-slate-200 bg-slate-50/80 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            当前预览：片段 {activeClip.index}
+                          </h3>
+                          <Chip color="warning" variant="soft">手动片段</Chip>
+                        </div>
+                        <p className="text-sm leading-6 text-slate-500">
+                          {activeClip.start.toFixed(2)}s - {activeClip.end.toFixed(2)}s · {activeClip.duration.toFixed(2)}s
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="ghost" isDisabled={!canPreviewPreviousClip} onClick={() => previewAdjacentClip(-1)}>
+                          <span className="inline-flex items-center gap-2">
+                            <ChevronLeft size={15} />
+                            上一段
+                          </span>
+                        </Button>
+                        <Button variant="ghost" isDisabled={!canPreviewNextClip} onClick={() => previewAdjacentClip(1)}>
+                          <span className="inline-flex items-center gap-2">
+                            下一段
+                            <ChevronRight size={15} />
+                          </span>
+                        </Button>
+                        <Button variant="secondary" onClick={() => void handleDownloadClip(activeClip)}>
+                          <span className="inline-flex items-center gap-2">
+                            <Download size={15} />
+                            下载当前片段
+                          </span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <VideoPlayer
+                      src={ApiService.getStreamUrl(activeClip.filename)}
+                      title={`片段 ${activeClip.index} 预览`}
+                      onDownload={() => void handleDownloadClip(activeClip)}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    {confirmedClips.map((clip) => {
+                      const isActiveClip = activeClip.filename === clip.filename;
+                      return (
+                        <div
+                          key={clip.filename}
+                          className={`rounded-2xl border p-4 transition ${
+                            isActiveClip ? 'border-orange-200 bg-orange-50/70' : 'border-slate-200 bg-slate-50/80'
+                          }`}
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="font-medium text-slate-900">片段 {clip.index}</div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {clip.start.toFixed(2)}s - {clip.end.toFixed(2)}s · {clip.duration.toFixed(2)}s
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Chip color="warning" variant="soft">手动片段</Chip>
+                              <Button
+                                variant={isActiveClip ? 'secondary' : 'ghost'}
+                                onClick={() => handlePreviewClip(clip)}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Eye size={15} />
+                                  {isActiveClip ? '正在预览' : '预览片段'}
+                                </span>
+                              </Button>
+                              <Button variant="ghost" onClick={() => void handleDownloadClip(clip)}>
+                                <span className="inline-flex items-center gap-2">
+                                  <Download size={15} />
+                                  单独下载
+                                </span>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              ) : (
+                <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+                  <div className="space-y-3">
+                    <h2 className="text-xl font-semibold tracking-tight text-slate-950">当前没有可预览片段</h2>
+                    <p className="text-sm leading-6 text-slate-600">
+                      这次导出没有生成片段。先回首页确认时间点是否正确，或者适当加大前后保留时间。
+                    </p>
+                  </div>
+                </Card>
+              )}
+
+              <Card className="border border-white/40 bg-white/82 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur">
+                <div className="space-y-4">
+                  <div className="text-sm uppercase tracking-[0.18em] text-slate-400">下一步</div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm leading-6 text-slate-700">
+                    {result.diagnostics?.recommendedActions?.[0] || '如果片段起止不合适，回首页调整前后保留时间或增删时间点后再重跑。'}
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

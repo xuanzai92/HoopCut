@@ -239,10 +239,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-sm text-white/85">
-              <Button variant="ghost" onClick={togglePlay}>
+              <Button variant="ghost" onClick={togglePlay} aria-label={isPlaying ? '暂停视频' : '播放视频'}>
                 {isPlaying ? <Pause size={16} /> : <Play size={16} />}
               </Button>
-              <Button variant="ghost" onClick={toggleMute}>
+              <Button variant="ghost" onClick={toggleMute} aria-label={isMuted || volume === 0 ? '取消静音' : '静音'}>
                 {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </Button>
               <div className="w-24">
@@ -261,17 +261,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               {onDownload ? (
-                <Button variant="ghost" onClick={onDownload}>
+                <Button variant="ghost" onClick={onDownload} aria-label="下载视频">
                   <Download size={16} />
                 </Button>
               ) : null}
-              <Button variant="ghost" onClick={() => void handlePictureInPicture()}>
+              <Button variant="ghost" onClick={() => void handlePictureInPicture()} aria-label="画中画播放">
                 <PictureInPicture2 size={16} />
               </Button>
-              <Button variant="ghost" onClick={() => void toggleFullscreen()}>
+              <Button variant="ghost" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? '退出全屏' : '进入全屏'}>
                 {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
               </Button>
-              <Button variant="ghost" onClick={() => seekTo(Math.min(duration, currentTime + 10))}>
+              <Button variant="ghost" onClick={() => seekTo(Math.min(duration, currentTime + 10))} aria-label="快进10秒">
                 <Expand size={16} />
               </Button>
             </div>

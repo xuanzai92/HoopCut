@@ -2,6 +2,7 @@ import type {
   TaskStatus,
   DetectionStats,
   ProcessingResult,
+  ProcessingMode,
   PlayerSelectionBox,
   SelectionFrame,
   ReusableVideoSource,
@@ -42,6 +43,7 @@ export interface ProcessingConfig {
 export interface Task {
   id: string;
   status: TaskStatus;
+  processingMode?: ProcessingMode;
   stage: string;
   progress: number;
   message: string;

@@ -805,20 +805,7 @@ class BasketballShotDetector:
     def _should_auto_retry_target_detection(self, output: Dict, target_player_box: Optional[Dict]) -> bool:
         if not target_player_box:
             return False
-
-        diagnostics = output.get('diagnostics', {})
-        outcome = str(diagnostics.get('outcome') or '')
-        coverage = float(output.get('tracking', {}).get('coverage') or 0.0)
-        possible_highlights = int(output.get('stats', {}).get('possible_highlights', 0) or 0)
-        confirmed = int(output.get('selection_summary', {}).get('confirmed', 0) or 0)
-
-        if possible_highlights > 0:
-            return True
-
-        if coverage < self.AUTO_RETRY_MIN_TRACKING_COVERAGE:
-            return True
-
-        return confirmed == 0 and outcome in self.AUTO_RETRY_TRIGGER_OUTCOMES
+        return False
 
     def _should_stop_auto_retry_after_stable_improvement(self, output: Dict) -> bool:
         selection_summary = output.get('selection_summary', {})
@@ -1354,33 +1341,6 @@ class BasketballShotDetector:
         target_player_box: Optional[Dict],
         retry_candidates: List[Dict],
     ) -> Optional[Dict]:
-        if not target_player_box:
-            return target_player_box
-
-        selection_time = float(target_player_box.get('selectionTime') or 0.0)
-        if selection_time < self.PREALIGN_MIN_SELECTION_TIME_SECONDS:
-            return target_player_box
-
-        if not retry_candidates:
-            return target_player_box
-
-        for candidate in retry_candidates:
-            candidate_box = candidate.get('target_player_box')
-            if not isinstance(candidate_box, dict):
-                continue
-
-            candidate_time = float(candidate_box.get('selectionTime') or selection_time)
-            if candidate_time >= selection_time:
-                continue
-
-            if selection_time - candidate_time < self.PREALIGN_MIN_EARLIER_SHIFT_SECONDS:
-                continue
-
-            if float(candidate.get('score') or 0.0) < self.PREALIGN_MIN_CANDIDATE_SCORE:
-                continue
-
-            return candidate_box
-
         return target_player_box
 
     def _select_prealigned_target_player_box(
@@ -2144,25 +2104,7 @@ class BasketballShotDetector:
                 annotated_output_path=run_annotated_output_path,
             )
 
-        prealign_retry_candidates = self._discover_retry_target_boxes(
-            video_path,
-            target_player_box,
-        ) if target_player_box else []
-        initial_target_player_box = self._select_prealigned_target_player_box_from_candidates(
-            target_player_box,
-            prealign_retry_candidates,
-        )
-        if (
-            target_player_box
-            and initial_target_player_box
-            and float(initial_target_player_box.get('selectionTime') or 0.0)
-            < float(target_player_box.get('selectionTime') or 0.0)
-        ):
-            print(
-                '目标球员起始帧已自动前移: '
-                f"{float(target_player_box.get('selectionTime') or 0.0):.2f}s -> "
-                f"{float(initial_target_player_box.get('selectionTime') or 0.0):.2f}s"
-            )
+        initial_target_player_box = target_player_box
 
         initial_output = run_detection_once(
             initial_target_player_box,
@@ -2187,15 +2129,7 @@ class BasketballShotDetector:
 
         retry_outputs: List[Tuple[Optional[str], Dict, Dict]] = []
         if self._should_auto_retry_target_detection(initial_output, initial_target_player_box):
-            can_reuse_prealign_candidates = (
-                target_player_box == initial_target_player_box
-                and bool(prealign_retry_candidates)
-            )
-            retry_candidates = (
-                prealign_retry_candidates
-                if can_reuse_prealign_candidates
-                else self._discover_retry_target_boxes(video_path, initial_target_player_box)
-            )
+            retry_candidates = self._discover_retry_target_boxes(video_path, initial_target_player_box)
             best_score = self._score_detection_output(initial_output)
             best_key = 'initial'
 

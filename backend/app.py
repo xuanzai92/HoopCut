@@ -124,6 +124,8 @@ PERSISTED_TASK_FIELDS = {
     'input_path',
     'before_seconds',
     'after_seconds',
+    'processing_mode',
+    'manual_moments',
     'target_player_box',
     'effective_target_player_box',
 }
@@ -186,6 +188,61 @@ def validate_target_player_box(raw_box):
         normalized_box['selectionFrame'] = int(round(selection_frame))
 
     return normalized_box
+
+
+def get_video_metadata(video_path):
+    cap = cv2.VideoCapture(video_path)
+    is_opened = getattr(cap, 'isOpened', None)
+    if not callable(is_opened) or not is_opened():
+        raise ValueError('无法打开视频文件')
+
+    try:
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if fps <= 0 or total_frames <= 0:
+            raise ValueError('无法读取视频时长')
+
+        duration = total_frames / fps
+        return {
+            'fps': fps,
+            'total_frames': total_frames,
+            'duration': duration,
+        }
+    finally:
+        cap.release()
+
+
+def validate_manual_moments(raw_moments, duration):
+    if not isinstance(raw_moments, list) or not raw_moments:
+        raise ValueError('manualMoments 不能为空')
+
+    normalized_moments = []
+    seen = set()
+    max_duration = max(float(duration or 0.0), 0.0)
+
+    for raw_moment in raw_moments:
+        if not isinstance(raw_moment, (int, float)):
+            raise ValueError('manualMoments 只能包含数字时间点')
+
+        moment = round(float(raw_moment), 3)
+        if moment < 0:
+            raise ValueError('manualMoments 不能包含负数时间点')
+
+        if max_duration > 0 and moment > max_duration:
+            raise ValueError('manualMoments 超出视频总时长')
+
+        moment_key = round(moment, 2)
+        if moment_key in seen:
+            continue
+
+        seen.add(moment_key)
+        normalized_moments.append(moment)
+
+    if not normalized_moments:
+        raise ValueError('manualMoments 不能为空')
+
+    normalized_moments.sort()
+    return normalized_moments
 
 
 def find_uploaded_filenames(file_id):
@@ -258,6 +315,8 @@ def build_task_source_payload(task_id, task):
         'fileSize': os.path.getsize(input_path),
         'mimeType': guess_video_mime_type(filename),
         'sourceStreamUrl': f'/api/tasks/{task_id}/source/stream',
+        'processingMode': task.get('processing_mode', 'auto'),
+        'manualMoments': task.get('manual_moments') or [],
         'targetPlayerBox': effective_target_player_box,
     }
 
@@ -880,12 +939,16 @@ def build_progress_response(task):
         'stage': task.get('stage', ''),
         'status': task.get('status', 'failed'),
         'completed': task.get('status') in TERMINAL_TASK_STATUSES,
+        'processingMode': task.get('processing_mode', 'auto'),
+        'manualMoments': task.get('manual_moments') or [],
         'createdAt': _format_task_timestamp(task.get('created_at')),
         'updatedAt': _format_task_timestamp(task.get('updated_at')),
     }
 
     if task.get('status') == 'completed' and task.get('result'):
         normalized_result = normalize_result_payload(task.get('result'))
+        normalized_result['processingMode'] = task.get('processing_mode', normalized_result.get('processingMode', 'auto'))
+        normalized_result['manualMoments'] = task.get('manual_moments') or normalized_result.get('manualMoments') or []
         task_target_player_box = task.get('target_player_box')
         if isinstance(task_target_player_box, dict):
             existing_target_player_box = (
@@ -925,6 +988,8 @@ def _build_task_from_payload(task_id, payload):
         'input_path': payload.get('input_path'),
         'before_seconds': payload.get('before_seconds', payload.get('beforeSeconds')),
         'after_seconds': payload.get('after_seconds', payload.get('afterSeconds')),
+        'processing_mode': payload.get('processing_mode', payload.get('processingMode', 'auto')),
+        'manual_moments': payload.get('manual_moments', payload.get('manualMoments')),
         'target_player_box': payload.get('target_player_box', payload.get('targetPlayerBox')),
         'effective_target_player_box': payload.get(
             'effective_target_player_box',
@@ -1177,19 +1242,23 @@ def process_video():
         file_id = data['fileId']
         before_seconds = data.get('beforeSeconds', DEFAULT_CLIP_BEFORE_SECONDS)
         after_seconds = data.get('afterSeconds', DEFAULT_CLIP_AFTER_SECONDS)
+        requested_mode = str(data.get('mode') or '').strip().lower()
+        processing_mode = requested_mode if requested_mode in {'manual', 'auto'} else (
+            'manual' if data.get('manualMoments') else 'auto'
+        )
         target_player_box = validate_target_player_box(data.get('targetPlayerBox'))
         
         # 验证参数
-        if not isinstance(before_seconds, (int, float)) or before_seconds < 1 or before_seconds > 30:
+        if not isinstance(before_seconds, (int, float)) or before_seconds < 0 or before_seconds > 30:
             return jsonify({
                 'success': False,
-                'error': '进球前保留时间必须在1-30秒之间'
+                'error': '片段前保留时间必须在0-30秒之间'
             }), 400
             
-        if not isinstance(after_seconds, (int, float)) or after_seconds < 1 or after_seconds > 10:
+        if not isinstance(after_seconds, (int, float)) or after_seconds < 0 or after_seconds > 10:
             return jsonify({
                 'success': False,
-                'error': '进球后保留时间必须在1-10秒之间'
+                'error': '片段后保留时间必须在0-10秒之间'
             }), 400
         
         uploaded_file_path = find_uploaded_file_path(file_id)
@@ -1212,6 +1281,14 @@ def process_video():
                 'error': '文件不存在或不可读'
             }), 404
         
+        manual_moments = []
+        if processing_mode == 'manual':
+            video_metadata = get_video_metadata(input_path)
+            manual_moments = validate_manual_moments(
+                data.get('manualMoments'),
+                video_metadata['duration'],
+            )
+
         # 生成任务ID
         task_id = str(uuid.uuid4())
         task_metadata = {
@@ -1219,12 +1296,17 @@ def process_video():
             'fileId': file_id,
             'beforeSeconds': before_seconds,
             'afterSeconds': after_seconds,
+            'processingMode': processing_mode,
+            'manualMoments': manual_moments,
             'targetPlayerBox': target_player_box,
             'createdAt': datetime.now().isoformat(),
         }
         metadata_path = save_task_metadata(task_id, task_metadata)
         
-        logger.info(f"创建处理任务: {task_id}, 文件: {uploaded_filename}, 参数: before={before_seconds}s, after={after_seconds}s")
+        logger.info(
+            f"创建处理任务: {task_id}, 文件: {uploaded_filename}, mode={processing_mode}, "
+            f"before={before_seconds}s, after={after_seconds}s"
+        )
         
         # 初始化任务状态
         processing_tasks[task_id] = {
@@ -1239,6 +1321,8 @@ def process_video():
             'input_path': input_path,
             'before_seconds': before_seconds,
             'after_seconds': after_seconds,
+            'processing_mode': processing_mode,
+            'manual_moments': manual_moments,
             'target_player_box': target_player_box,
             'metadata_path': metadata_path,
         }
@@ -1292,11 +1376,215 @@ def update_task_progress(task_id, **kwargs):
         except Exception as e:
             logger.error(f"WebSocket发送失败: {e}")
 
+
+def build_manual_tracking_summary(total_frames=0):
+    return {
+        'enabled': False,
+        'activeFrames': 0,
+        'totalFrames': int(total_frames or 0),
+        'coverage': 0.0,
+        'missingFrames': 0,
+        'lostFrames': 0,
+        'reacquiredCount': 0,
+        'guardedSwitches': 0,
+        'latestStatus': 'disabled',
+        'startFrame': 0,
+        'startTime': 0.0,
+        'primedReferenceSamples': 0,
+        'runtimeReferenceSamples': 0,
+        'error': None,
+    }
+
+
+def build_manual_shots(manual_moments, fps):
+    shots = []
+    safe_fps = float(fps or 0.0)
+    for index, moment in enumerate(manual_moments, start=1):
+        timestamp = round(float(moment), 3)
+        frame = int(round(timestamp * safe_fps)) if safe_fps > 0 else 0
+        shots.append({
+            'frame': frame,
+            'timestamp': timestamp,
+            'made': False,
+            'clip_export': True,
+            'owner': 'manual',
+            'owner_confidence': 1.0,
+            'target_visible': True,
+            'highlight_role': 'manual',
+            'highlight_confidence': 1.0,
+            'manual_index': index,
+        })
+    return shots
+
+
+def process_manual_video_background(task_id, input_path, before_seconds, after_seconds):
+    task = processing_tasks.get(task_id, {})
+    manual_moments = task.get('manual_moments') or []
+    if not manual_moments:
+        raise ValueError('当前没有可处理的手动时间点')
+
+    logger.info(f"开始手动剪辑任务: {task_id}, moments={manual_moments}")
+    update_task_progress(
+        task_id,
+        status='generating',
+        progress=15,
+        stage='正在按你选择的时间点导出片段...',
+    )
+
+    metadata = get_video_metadata(input_path)
+    manual_shots = build_manual_shots(manual_moments, metadata['fps'])
+
+    for shot in manual_shots:
+        update_task_progress(
+            task_id,
+            log=(
+                f"手动时间点 #{shot['manual_index']} - "
+                f"{float(shot['timestamp']):.2f}s"
+            ),
+        )
+
+    output_filename = f"{task_id}_highlight.mp4"
+    output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
+    task_temp_dir = os.path.join(app.config['TEMP_FOLDER'], task_id)
+    processor = VideoProcessor(temp_dir=task_temp_dir)
+    video_result = processor.process_video_full_pipeline(
+        video_path=input_path,
+        timestamps=manual_shots,
+        output_path=output_path,
+        before=before_seconds,
+        after=after_seconds,
+        log_callback=lambda message: update_task_progress(task_id, log=message),
+        clip_output_dir=app.config['OUTPUT_FOLDER'],
+        clip_filename_prefix=f"{task_id}_clip",
+        keep_clips=True,
+    )
+
+    if not video_result['success']:
+        raise Exception(video_result['error'])
+
+    clip_segments = [
+        {
+            'filename': clip['filename'],
+            'index': clip['index'],
+            'start': clip['start'],
+            'end': clip['end'],
+            'duration': clip['duration'],
+            'shotFrame': clip['shot_frame'],
+            'shotTimestamp': clip['shot_timestamp'],
+            'highlightRole': 'manual',
+            'candidateReason': None,
+            'candidateSource': 'manual_selection',
+            'highlightConfidence': 1.0,
+        }
+        for clip in video_result.get('clips', [])
+    ]
+    confirmed_clip_count = len(clip_segments)
+    highlight_output_path = video_result.get('output_file')
+    highlight_video_filename = (
+        os.path.basename(highlight_output_path)
+        if highlight_output_path and os.path.exists(highlight_output_path)
+        else None
+    )
+    file_size = (
+        os.path.getsize(highlight_output_path)
+        if highlight_output_path and os.path.exists(highlight_output_path)
+        else 0
+    )
+    completed_at_iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    update_task_progress(
+        task_id,
+        status='completed',
+        progress=100,
+        stage='处理完成',
+        result={
+            'processingMode': 'manual',
+            'manualMoments': manual_moments,
+            'totalShots': confirmed_clip_count,
+            'madeShots': confirmed_clip_count,
+            'targetShots': 0,
+            'targetScores': 0,
+            'targetAssists': 0,
+            'targetHighlights': confirmed_clip_count,
+            'possibleHighlights': 0,
+            'relatedHighlights': confirmed_clip_count,
+            'reviewCandidateHighlights': 0,
+            'accuracy': 100 if confirmed_clip_count > 0 else 0,
+            'highlightVideo': highlight_video_filename,
+            'annotatedVideo': None,
+            'timestamps': manual_shots,
+            'debugTimestamps': [],
+            'allMadeTimestamps': manual_shots,
+            'clips': clip_segments,
+            'debugClips': [],
+            'fileSize': file_size,
+            'targetPlayerBox': None,
+            'effectiveTargetPlayerBox': None,
+            'tracking': build_manual_tracking_summary(metadata['total_frames']),
+            'message': (
+                f"已按你选择的 {confirmed_clip_count} 个时间点导出片段。"
+                if confirmed_clip_count > 0
+                else '当前没有成功导出的片段，请检查时间点和源视频。'
+            ),
+            'selectionSummary': {
+                'mode': 'manual',
+                'confirmed': confirmed_clip_count,
+                'possible': 0,
+            },
+            'diagnostics': {
+                'outcome': 'manual_selection',
+                'summary': '当前结果完全来自你手动选择的时间点，系统没有再做自动找球或人物归因。',
+                'recommendedActions': [
+                    '如果片段起止不合适，回首页调整前后保留时间再重跑。',
+                ],
+                'counts': {
+                    'selectedClips': confirmed_clip_count,
+                },
+                'trackingCoverage': 0.0,
+            },
+            'pipeline': {
+                'scan': {
+                    'mode': 'manual_timestamps',
+                    'fullVideoScanned': False,
+                    'trackerEnabled': False,
+                    'trackingStartTime': None,
+                    'trackingStartFrame': None,
+                    'totalShotEvents': len(manual_moments),
+                    'madeShotEvents': len(manual_moments),
+                    'targetVisibleEvents': 0,
+                },
+                'attribution': {
+                    'selectionMode': 'manual',
+                    'confirmedHighlights': confirmed_clip_count,
+                    'possibleHighlights': 0,
+                    'confirmedScores': 0,
+                    'confirmedAssists': 0,
+                    'reviewCandidates': 0,
+                    'trackingCoverage': 0.0,
+                },
+                'export': {
+                    'selectedClipCount': confirmed_clip_count,
+                    'selectedHighlights': confirmed_clip_count,
+                    'clipWindowBeforeSeconds': before_seconds,
+                    'clipWindowAfterSeconds': after_seconds,
+                    'scoreClips': 0,
+                    'assistClips': 0,
+                    'possibleClips': 0,
+                },
+            },
+            'completed_at': completed_at_iso,
+        },
+    )
+
 def process_video_background(task_id, input_path, before_seconds, after_seconds):
     """后台处理视频的函数"""
     
     try:
         logger.info(f"开始后台处理任务: {task_id}")
+        task = processing_tasks.get(task_id, {})
+        if str(task.get('processing_mode') or 'auto') == 'manual':
+            process_manual_video_background(task_id, input_path, before_seconds, after_seconds)
+            return
         
         # 更新状态：开始检测
         update_task_progress(task_id, 
@@ -1356,8 +1644,14 @@ def process_video_background(task_id, input_path, before_seconds, after_seconds)
         diagnostics = result.get('diagnostics', {})
         pipeline_summary = result.get('pipeline', {})
         auto_retry = result.get('auto_retry')
-        effective_target_player_box = result.get('target_player_box') or target_player_box
-        if effective_target_player_box != target_player_box:
+        effective_target_player_box = target_player_box or result.get('target_player_box')
+        if (
+            target_player_box
+            and result.get('target_player_box')
+            and result.get('target_player_box') != target_player_box
+        ):
+            logger.warning("检测结果返回了不同的目标人物框，已回退到用户原始框选")
+        if effective_target_player_box is not None:
             update_task_progress(task_id, effective_target_player_box=effective_target_player_box)
         keep_annotated_video, annotated_video_reason = should_keep_annotated_video(
             target_player_box=effective_target_player_box,
@@ -1746,6 +2040,7 @@ def download_selected_clips(task_id):
         archive_group_counts = {
             'score': 0,
             'assist': 0,
+            'manual': 0,
             'review': 0,
             'other': 0,
         }
@@ -1764,6 +2059,9 @@ def download_selected_clips(task_id):
                 elif highlight_role == 'assist':
                     archive_group = 'assist'
                     archive_filename = f"assist_{int(clip.get('index', 0)):03d}.mp4"
+                elif highlight_role == 'manual':
+                    archive_group = 'manual'
+                    archive_filename = f"manual_{int(clip.get('index', 0)):03d}.mp4"
                 elif highlight_role == 'possible':
                     archive_group = 'review'
                     archive_filename = f"review_{int(clip.get('index', 0)):03d}.mp4"
@@ -1793,9 +2091,17 @@ def download_selected_clips(task_id):
 
             manifest_scope = (
                 'confirmed'
-                if archive_group_counts['review'] == 0
+                if archive_group_counts['review'] == 0 and (
+                    archive_group_counts['score'] > 0
+                    or archive_group_counts['assist'] > 0
+                    or archive_group_counts['manual'] > 0
+                )
                 else 'debug'
-                if archive_group_counts['score'] == 0 and archive_group_counts['assist'] == 0
+                if (
+                    archive_group_counts['score'] == 0
+                    and archive_group_counts['assist'] == 0
+                    and archive_group_counts['manual'] == 0
+                )
                 else 'mixed'
             )
             manifest = {

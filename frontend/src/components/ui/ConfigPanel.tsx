@@ -5,6 +5,7 @@ import React from 'react';
 import { Button, Card, Chip } from '@heroui/react';
 import { RotateCcw, Settings2 } from 'lucide-react';
 import type { ProcessingConfig } from '@/types';
+import { DEFAULT_PROCESSING_CONFIG } from '@/utils';
 
 interface ConfigPanelProps {
   config: ProcessingConfig;
@@ -26,11 +27,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // 重置为默认配置
   const resetToDefaults = () => {
-    const defaultConfig: ProcessingConfig = {
-      beforeSeconds: 3,
-      afterSeconds: 1,
-    };
-    onChange(defaultConfig);
+    onChange(DEFAULT_PROCESSING_CONFIG);
   };
 
   return (
@@ -42,7 +39,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             <span className="text-base font-semibold">剪辑参数</span>
           </div>
           <p className="text-sm text-slate-500">
-            控制每个进球片段前后的保留时间，决定最后成片的节奏感。
+            控制每个片段前后的保留时间，决定最后成片的节奏感。
           </p>
         </div>
         <Button
@@ -62,8 +59,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-slate-900">进球前保留时间</p>
-              <p className="text-sm text-slate-500">保留进攻发起、跑位和出手前的关键片段。</p>
+              <p className="text-sm font-semibold text-slate-900">片段前保留时间</p>
+              <p className="text-sm text-slate-500">保留动作发起、跑位和关键起手前的片段。</p>
             </div>
             <Chip color="warning" variant="soft">
               {config.beforeSeconds.toFixed(1)}s
@@ -71,7 +68,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           </div>
           <input
             type="range"
-            min={1}
+            min={0}
             max={15}
             step={0.5}
             value={config.beforeSeconds}
@@ -80,7 +77,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             className="hero-range"
           />
           <div className="flex justify-between text-xs text-slate-400">
-            <span>1s</span>
+            <span>0s</span>
             <span>15s</span>
           </div>
         </div>
@@ -88,7 +85,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-slate-900">进球后保留时间</p>
+              <p className="text-sm font-semibold text-slate-900">片段后保留时间</p>
               <p className="text-sm text-slate-500">保留庆祝、回防和镜头收尾，避免成片太硬切。</p>
             </div>
             <Chip color="success" variant="soft">
@@ -97,7 +94,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           </div>
           <input
             type="range"
-            min={1}
+            min={0}
             max={10}
             step={0.5}
             value={config.afterSeconds}
@@ -106,13 +103,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             className="hero-range"
           />
           <div className="flex justify-between text-xs text-slate-400">
-            <span>1s</span>
+            <span>0s</span>
             <span>10s</span>
           </div>
         </div>
 
         <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4 text-sm text-slate-600">
-          默认配置适合大多数半场和全场比赛素材。如果原视频节奏更快，建议适当缩短前置时间。
+          默认配置适合大多数比赛素材。如果你只想截关键动作，建议适当缩短前置时间。
         </div>
       </div>
     </Card>

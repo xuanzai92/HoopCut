@@ -194,8 +194,13 @@ export class ApiService {
   static async processVideo(params: ProcessParams): Promise<ProcessResponse> {
     const payload: Record<string, unknown> = {
       fileId: params.fileId,
+      mode: params.mode,
       targetPlayerBox: params.targetPlayerBox ?? null,
     };
+
+    if (Array.isArray(params.manualMoments)) {
+      payload.manualMoments = params.manualMoments;
+    }
 
     if (typeof params.beforeSeconds === 'number') {
       payload.beforeSeconds = params.beforeSeconds;
@@ -297,6 +302,8 @@ export class ApiService {
       fileSize: response.fileSize,
       mimeType: response.mimeType,
       sourceStreamUrl: buildApiUrl(response.sourceStreamUrl),
+      processingMode: response.processingMode,
+      manualMoments: response.manualMoments ?? [],
       targetPlayerBox: response.targetPlayerBox ?? null,
     };
   }

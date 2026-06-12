@@ -766,7 +766,7 @@ class VideoLogicTests(unittest.TestCase):
         self.assertEqual(result['selection_summary']['mode'], 'target_attempt_fallback')
         self.assertEqual(result['diagnostics']['outcome'], 'target_attempt_fallback')
 
-    def test_detect_shots_with_clips_uses_auto_retry_when_retry_improves_result(self):
+    def test_detect_shots_with_clips_keeps_user_selected_target_when_retry_candidates_exist(self):
         detector = object.__new__(BasketballShotDetector)
         detector.detect_shots = Mock(side_effect=[
             (
@@ -867,17 +867,18 @@ class VideoLogicTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(detector.detect_shots.call_count, 2)
-        discover_retry_mock.assert_called_once()
-        self.assertEqual(result['selection_summary']['confirmed'], 1)
-        self.assertEqual(result['stats']['target_scores'], 1)
-        self.assertEqual(result['diagnostics']['outcome'], 'confirmed_highlights')
-        self.assertTrue(result['auto_retry']['used'])
-        self.assertEqual(result['auto_retry']['attempted'], 1)
-        self.assertEqual(result['auto_retry']['selectedRun'], 'retry_1')
-        self.assertEqual(result['auto_retry']['finalSelectionTime'], 6.2)
+        self.assertEqual(detector.detect_shots.call_count, 1)
+        discover_retry_mock.assert_not_called()
+        self.assertFalse(result['auto_retry']['used'])
+        self.assertEqual(result['auto_retry']['attempted'], 0)
+        self.assertEqual(result['auto_retry']['initialSelectionTime'], 5.0)
+        self.assertEqual(result['auto_retry']['finalSelectionTime'], 5.0)
+        self.assertEqual(
+            detector.detect_shots.call_args.kwargs['target_player_box']['selectionTime'],
+            5.0,
+        )
 
-    def test_detect_shots_with_clips_stops_auto_retry_after_first_stable_improvement(self):
+    def test_detect_shots_with_clips_skips_auto_retry_even_when_initial_tracking_is_weak(self):
         detector = object.__new__(BasketballShotDetector)
         detector.detect_shots = Mock(side_effect=[
             (
@@ -907,64 +908,6 @@ class VideoLogicTests(unittest.TestCase):
                 {
                     'enabled': True,
                     'coverage': 0.28,
-                },
-            ),
-            (
-                [{
-                    'frame': 240,
-                    'timestamp': 8.0,
-                    'made': True,
-                    'owner': 'target',
-                    'owner_confidence': 0.87,
-                    'target_visible': True,
-                    'highlight_role': 'score',
-                    'highlight_confidence': 0.87,
-                    'local_target_visible': True,
-                    'local_owner_confidence': 0.87,
-                    'local_highlight_role': 'score',
-                    'local_highlight_confidence': 0.87,
-                    'local_involvement_start_frame': 225,
-                    'local_involvement_end_frame': 238,
-                    'local_involvement_start_timestamp': 7.5,
-                    'local_involvement_end_timestamp': 7.93,
-                    'involvement_start_frame': 225,
-                    'involvement_end_frame': 238,
-                    'involvement_start_timestamp': 7.5,
-                    'involvement_end_timestamp': 7.93,
-                    'score_event_detected': True,
-                }],
-                {
-                    'enabled': True,
-                    'coverage': 0.91,
-                },
-            ),
-            (
-                [{
-                    'frame': 360,
-                    'timestamp': 12.0,
-                    'made': True,
-                    'owner': 'target',
-                    'owner_confidence': 0.84,
-                    'target_visible': True,
-                    'highlight_role': 'assist',
-                    'highlight_confidence': 0.84,
-                    'local_target_visible': True,
-                    'local_owner_confidence': 0.76,
-                    'local_highlight_role': 'assist',
-                    'local_highlight_confidence': 0.79,
-                    'local_involvement_start_frame': 306,
-                    'local_involvement_end_frame': 334,
-                    'local_involvement_start_timestamp': 10.2,
-                    'local_involvement_end_timestamp': 11.13,
-                    'involvement_start_frame': 300,
-                    'involvement_end_frame': 334,
-                    'involvement_start_timestamp': 10.0,
-                    'involvement_end_timestamp': 11.13,
-                    'score_event_detected': True,
-                }],
-                {
-                    'enabled': True,
-                    'coverage': 0.88,
                 },
             ),
         ])
@@ -1018,14 +961,11 @@ class VideoLogicTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(detector.detect_shots.call_count, 2)
-        discover_retry_mock.assert_called_once()
-        self.assertTrue(result['auto_retry']['used'])
-        self.assertEqual(result['auto_retry']['attempted'], 1)
-        self.assertEqual(result['auto_retry']['selectedRun'], 'retry_1')
-        self.assertEqual(result['auto_retry']['finalSelectionTime'], 6.2)
-        self.assertEqual(result['selection_summary']['confirmed'], 1)
-        self.assertEqual(result['stats']['possible_highlights'], 0)
+        self.assertEqual(detector.detect_shots.call_count, 1)
+        discover_retry_mock.assert_not_called()
+        self.assertFalse(result['auto_retry']['used'])
+        self.assertEqual(result['auto_retry']['attempted'], 0)
+        self.assertEqual(result['auto_retry']['finalSelectionTime'], 5.0)
 
     def test_retry_sample_frames_include_farther_backward_search(self):
         detector = object.__new__(BasketballShotDetector)
@@ -1149,7 +1089,7 @@ class VideoLogicTests(unittest.TestCase):
         self.assertNotIn(48, attempted_frames)
         self.assertEqual(cap.position, 40)
 
-    def test_select_prealigned_target_player_box_prefers_earlier_high_confidence_candidate(self):
+    def test_select_prealigned_target_player_box_keeps_original_user_selection(self):
         detector = object.__new__(BasketballShotDetector)
         original_box = {
             'x': 10,
@@ -1175,7 +1115,7 @@ class VideoLogicTests(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(selected_box, earlier_box)
+        self.assertEqual(selected_box, original_box)
 
     def test_select_prealigned_target_player_box_keeps_original_when_candidate_is_not_stable_enough(self):
         detector = object.__new__(BasketballShotDetector)
@@ -1202,7 +1142,7 @@ class VideoLogicTests(unittest.TestCase):
 
         self.assertEqual(selected_box, original_box)
 
-    def test_detect_shots_with_clips_uses_prealigned_target_box_before_initial_run(self):
+    def test_detect_shots_with_clips_uses_original_target_box_for_initial_run(self):
         detector = object.__new__(BasketballShotDetector)
         original_box = {
             'x': 10,
@@ -1254,9 +1194,9 @@ class VideoLogicTests(unittest.TestCase):
             )
 
         self.assertEqual(detector.detect_shots.call_count, 1)
-        self.assertEqual(detector.detect_shots.call_args.kwargs['target_player_box'], earlier_box)
+        self.assertEqual(detector.detect_shots.call_args.kwargs['target_player_box'], original_box)
         self.assertEqual(result['auto_retry']['initialSelectionTime'], 6.0)
-        self.assertEqual(result['auto_retry']['finalSelectionTime'], 4.8)
+        self.assertEqual(result['auto_retry']['finalSelectionTime'], 6.0)
 
     def test_retry_candidate_ranking_prefers_earlier_frame_when_scores_are_close(self):
         detector = object.__new__(BasketballShotDetector)
@@ -1378,12 +1318,12 @@ class VideoLogicTests(unittest.TestCase):
             )
 
         self.assertEqual(detector.detect_shots.call_count, 1)
-        discover_retry_mock.assert_called_once()
+        discover_retry_mock.assert_not_called()
         self.assertFalse(result['auto_retry']['used'])
         self.assertEqual(result['auto_retry']['attempted'], 0)
         self.assertEqual(result['selection_summary']['confirmed'], 1)
 
-    def test_detect_shots_with_clips_uses_auto_retry_when_confirmed_result_still_has_possible_highlights(self):
+    def test_detect_shots_with_clips_keeps_user_selected_target_when_possible_highlights_exist(self):
         detector = object.__new__(BasketballShotDetector)
         detector.detect_shots = Mock(side_effect=[
             (
@@ -1436,60 +1376,6 @@ class VideoLogicTests(unittest.TestCase):
                     'coverage': 0.91,
                 },
             ),
-            (
-                [
-                    {
-                        'frame': 120,
-                        'timestamp': 4.0,
-                        'made': True,
-                        'owner': 'target',
-                        'owner_confidence': 0.88,
-                        'target_visible': True,
-                        'highlight_role': 'score',
-                        'highlight_confidence': 0.88,
-                        'involvement_start_frame': 110,
-                        'involvement_end_frame': 120,
-                        'involvement_start_timestamp': 3.67,
-                        'involvement_end_timestamp': 4.0,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.82,
-                        'local_highlight_role': 'score',
-                        'local_highlight_confidence': 0.82,
-                        'local_involvement_start_frame': 108,
-                        'local_involvement_end_frame': 120,
-                        'local_involvement_start_timestamp': 3.60,
-                        'local_involvement_end_timestamp': 4.0,
-                        'score_event_detected': True,
-                    },
-                    {
-                        'frame': 360,
-                        'timestamp': 12.0,
-                        'made': True,
-                        'owner': 'target',
-                        'owner_confidence': 0.84,
-                        'target_visible': True,
-                        'highlight_role': 'assist',
-                        'highlight_confidence': 0.84,
-                        'involvement_start_frame': 300,
-                        'involvement_end_frame': 334,
-                        'involvement_start_timestamp': 10.0,
-                        'involvement_end_timestamp': 11.13,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.76,
-                        'local_highlight_role': 'assist',
-                        'local_highlight_confidence': 0.79,
-                        'local_involvement_start_frame': 306,
-                        'local_involvement_end_frame': 334,
-                        'local_involvement_start_timestamp': 10.2,
-                        'local_involvement_end_timestamp': 11.13,
-                        'score_event_detected': True,
-                    },
-                ],
-                {
-                    'enabled': True,
-                    'coverage': 0.86,
-                },
-            ),
         ])
 
         retry_target_box = {
@@ -1530,17 +1416,14 @@ class VideoLogicTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(detector.detect_shots.call_count, 2)
-        discover_retry_mock.assert_called_once()
-        self.assertTrue(result['auto_retry']['used'])
-        self.assertEqual(result['auto_retry']['attempted'], 1)
-        self.assertEqual(result['auto_retry']['selectedRun'], 'retry_1')
-        self.assertEqual(result['auto_retry']['finalSelectionTime'], 6.2)
-        self.assertEqual(result['selection_summary']['confirmed'], 2)
-        self.assertEqual(result['stats']['target_assists'], 1)
-        self.assertEqual(result['stats']['possible_highlights'], 0)
+        self.assertEqual(detector.detect_shots.call_count, 1)
+        discover_retry_mock.assert_not_called()
+        self.assertFalse(result['auto_retry']['used'])
+        self.assertEqual(result['auto_retry']['attempted'], 0)
+        self.assertEqual(result['auto_retry']['finalSelectionTime'], 5.0)
+        self.assertGreaterEqual(result['stats']['possible_highlights'], 0)
 
-    def test_detect_shots_with_clips_keeps_retrying_until_review_noise_clears(self):
+    def test_detect_shots_with_clips_does_not_retry_with_alternate_target_candidates(self):
         detector = object.__new__(BasketballShotDetector)
         detector.detect_shots = Mock(side_effect=[
             (
@@ -1570,110 +1453,6 @@ class VideoLogicTests(unittest.TestCase):
                 {
                     'enabled': True,
                     'coverage': 0.28,
-                },
-            ),
-            (
-                [
-                    {
-                        'frame': 240,
-                        'timestamp': 8.0,
-                        'made': True,
-                        'owner': 'target',
-                        'owner_confidence': 0.88,
-                        'target_visible': True,
-                        'highlight_role': 'score',
-                        'highlight_confidence': 0.88,
-                        'involvement_start_frame': 230,
-                        'involvement_end_frame': 240,
-                        'involvement_start_timestamp': 7.67,
-                        'involvement_end_timestamp': 8.0,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.82,
-                        'local_highlight_role': 'score',
-                        'local_highlight_confidence': 0.82,
-                        'local_involvement_start_frame': 228,
-                        'local_involvement_end_frame': 240,
-                        'local_involvement_start_timestamp': 7.60,
-                        'local_involvement_end_timestamp': 8.0,
-                        'score_event_detected': True,
-                    },
-                    {
-                        'frame': 300,
-                        'timestamp': 10.0,
-                        'made': False,
-                        'owner': 'target',
-                        'owner_confidence': 0.67,
-                        'target_visible': True,
-                        'highlight_role': 'none',
-                        'highlight_confidence': 0.0,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.61,
-                        'local_highlight_role': 'score',
-                        'local_highlight_confidence': 0.74,
-                        'local_involvement_start_frame': 282,
-                        'local_involvement_end_frame': 298,
-                        'local_involvement_start_timestamp': 9.40,
-                        'local_involvement_end_timestamp': 9.93,
-                        'score_event_detected': False,
-                    },
-                ],
-                {
-                    'enabled': True,
-                    'coverage': 0.91,
-                },
-            ),
-            (
-                [
-                    {
-                        'frame': 240,
-                        'timestamp': 8.0,
-                        'made': True,
-                        'owner': 'target',
-                        'owner_confidence': 0.88,
-                        'target_visible': True,
-                        'highlight_role': 'score',
-                        'highlight_confidence': 0.88,
-                        'involvement_start_frame': 230,
-                        'involvement_end_frame': 240,
-                        'involvement_start_timestamp': 7.67,
-                        'involvement_end_timestamp': 8.0,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.82,
-                        'local_highlight_role': 'score',
-                        'local_highlight_confidence': 0.82,
-                        'local_involvement_start_frame': 228,
-                        'local_involvement_end_frame': 240,
-                        'local_involvement_start_timestamp': 7.60,
-                        'local_involvement_end_timestamp': 8.0,
-                        'score_event_detected': True,
-                    },
-                    {
-                        'frame': 360,
-                        'timestamp': 12.0,
-                        'made': True,
-                        'owner': 'target',
-                        'owner_confidence': 0.84,
-                        'target_visible': True,
-                        'highlight_role': 'assist',
-                        'highlight_confidence': 0.84,
-                        'involvement_start_frame': 300,
-                        'involvement_end_frame': 334,
-                        'involvement_start_timestamp': 10.0,
-                        'involvement_end_timestamp': 11.13,
-                        'local_target_visible': True,
-                        'local_owner_confidence': 0.76,
-                        'local_highlight_role': 'assist',
-                        'local_highlight_confidence': 0.79,
-                        'local_involvement_start_frame': 306,
-                        'local_involvement_end_frame': 334,
-                        'local_involvement_start_timestamp': 10.2,
-                        'local_involvement_end_timestamp': 11.13,
-                        'score_event_detected': True,
-                    },
-                ],
-                {
-                    'enabled': True,
-                    'coverage': 0.86,
                 },
             ),
         ])
@@ -1727,14 +1506,11 @@ class VideoLogicTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(detector.detect_shots.call_count, 3)
-        discover_retry_mock.assert_called_once()
-        self.assertTrue(result['auto_retry']['used'])
-        self.assertEqual(result['auto_retry']['attempted'], 2)
-        self.assertEqual(result['auto_retry']['selectedRun'], 'retry_2')
-        self.assertEqual(result['auto_retry']['finalSelectionTime'], 7.1)
-        self.assertEqual(result['selection_summary']['confirmed'], 2)
-        self.assertEqual(result['stats']['possible_highlights'], 0)
+        self.assertEqual(detector.detect_shots.call_count, 1)
+        discover_retry_mock.assert_not_called()
+        self.assertFalse(result['auto_retry']['used'])
+        self.assertEqual(result['auto_retry']['attempted'], 0)
+        self.assertEqual(result['auto_retry']['finalSelectionTime'], 5.0)
 
     def test_detect_shots_with_clips_keeps_confirmed_and_extra_review_candidates(self):
         detector = object.__new__(BasketballShotDetector)

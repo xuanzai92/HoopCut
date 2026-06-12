@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, Button, Card, Chip } from '@heroui/react';
-import { CheckCircle2, Eye, FileVideo, RefreshCcw, UserRound } from 'lucide-react';
+import { CheckCircle2, Clock3, Eye, FileVideo, RefreshCcw, UserRound } from 'lucide-react';
 import type { Task } from '@/types';
 import { formatTimestamp } from '@/utils';
 
@@ -53,6 +53,8 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
   className = '',
 }) => {
   const result = task.result;
+  const processingMode = task.processingMode ?? result?.processingMode ?? 'auto';
+  const isManualMode = processingMode === 'manual';
   const diagnosticsOutcome = result?.diagnostics?.outcome;
   const trackingCoveragePercent = (result?.tracking?.coverage ?? 0) * 100;
   const hasTrackingRisk = Boolean(result?.tracking?.enabled) && trackingCoveragePercent < 55;
@@ -66,12 +68,21 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
     (result?.targetScores ?? 0) + (result?.targetAssists ?? 0)
   );
   const debugHighlights = result?.possibleHighlights ?? result?.debugClips?.length ?? 0;
+  const manualClipCount = result?.clips?.length ?? result?.relatedHighlights ?? result?.timestamps?.length ?? 0;
+  const manualMomentCount = result?.manualMoments?.length ?? 0;
   const deliveryModeLabel = getDeliveryModeLabel({
     confirmedHighlights,
     possibleHighlights: debugHighlights,
     diagnosticsOutcome,
   });
+  const currentDeliveryText = isManualMode ? '手动时间点导出' : deliveryModeLabel;
   const completionSummary = (() => {
+    if (isManualMode) {
+      if (result?.highlightVideo) {
+        return '手动时间点导出已经完成。先去结果页验收每个片段；如果你想快速过一遍整体顺序，也可以顺手下载拼接视频。';
+      }
+      return '手动时间点导出已经完成。直接去结果页验收片段；如果起止不合适，再回首页调整时间点或前后保留时间。';
+    }
     if (diagnosticsOutcome === 'global_makes_without_target') {
       return '本地处理已完成，但当前没有稳定锁定到目标球员相关片段。先去结果页看高级排错区；如果你怀疑人物跟丢，再看标注视频，然后重新框选并重跑。';
     }
@@ -86,11 +97,21 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
     }
     return '本地处理已完成。当前没有可下载的已确认片段，但你仍然可以进入结果页查看识别结果。';
   })();
-  const statItems = [
-    { label: '主交付片段', value: result?.relatedHighlights ?? result?.timestamps?.length ?? 0, icon: FileVideo },
-    { label: '已确认片段', value: confirmedHighlights, icon: CheckCircle2 },
-    { label: '高级排错片段', value: debugHighlights, icon: UserRound },
-  ];
+  const overviewText = isManualMode
+    ? '这页只用来确认手动时间点导出是否完成。真正的验收动作放在结果页：先检查片段边界；如果不合适，再回首页调整时间点或前后保留时间。'
+    : '这页只用来确认自动处理是否完成。真正的验收动作放在结果页：先下载已确认片段；只有怀疑漏剪时，再看高级排错区里的系统补充片段，不满意就重新框选并重跑。';
+  const statItems = isManualMode
+    ? [
+      { label: '主交付片段', value: manualClipCount, icon: FileVideo },
+      { label: '已选时间点', value: manualMomentCount, icon: Clock3 },
+      { label: '拼接视频', value: result?.highlightVideo ? '已生成' : '未生成', icon: CheckCircle2 },
+    ]
+    : [
+      { label: '主交付片段', value: result?.relatedHighlights ?? result?.timestamps?.length ?? 0, icon: FileVideo },
+      { label: '已确认片段', value: confirmedHighlights, icon: CheckCircle2 },
+      { label: '高级排错片段', value: debugHighlights, icon: UserRound },
+    ];
+  const reuseActionLabel = isManualMode ? '回首页调整时间点' : '重新框选并重跑';
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -119,7 +140,7 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-              这页只用来确认自动处理是否完成。真正的验收动作放在结果页：先下载已确认片段；只有怀疑漏剪时，再看高级排错区里的系统补充片段，不满意就重新框选并重跑。
+              {overviewText}
             </div>
           </div>
         </Card>
@@ -133,11 +154,11 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
 
             {result ? (
               <div className="rounded-2xl border border-orange-100 bg-orange-50/70 px-4 py-3 text-sm text-slate-700">
-                当前交付：{deliveryModeLabel}
+                当前交付：{currentDeliveryText}
               </div>
             ) : null}
 
-            {task.status === 'completed' && diagnosticsOutcome === 'global_makes_without_target' ? (
+            {task.status === 'completed' && !isManualMode && diagnosticsOutcome === 'global_makes_without_target' ? (
               <Alert status="warning">
                 <div className="text-sm leading-6 text-current/85">
                   当前检测到了全场进球，但还没有稳定锁定到目标球员。建议先看结果页里的诊断和标注视频，再重新框选并重跑。
@@ -175,7 +196,7 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
                       <Button variant="secondary" onClick={onReuseSource}>
                         <span className="inline-flex items-center gap-2">
                           <RefreshCcw size={14} />
-                          重新框选并重跑
+                          {reuseActionLabel}
                         </span>
                       </Button>
                     ) : null}
@@ -206,7 +227,7 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
                 <Button variant="secondary" onClick={onReuseSource} className="rounded-full">
                   <span className="inline-flex items-center gap-2">
                     <RefreshCcw size={16} />
-                    重新框选并重跑
+                    {reuseActionLabel}
                   </span>
                 </Button>
               ) : null}

@@ -36,8 +36,12 @@ export interface ReusableVideoSource {
   fileSize: number;
   mimeType?: string;
   sourceStreamUrl: string;
+  processingMode?: ProcessingMode;
+  manualMoments?: number[];
   targetPlayerBox?: PlayerSelectionBox | null;
 }
+
+export type ProcessingMode = 'manual' | 'auto';
 
 export interface TrackingSummary {
   enabled: boolean;
@@ -70,10 +74,10 @@ export interface ShotTimestamp {
   frame: number;
   timestamp: number;
   made: boolean;
-  owner?: 'target' | 'unknown';
+  owner?: 'target' | 'unknown' | 'manual';
   owner_confidence?: number;
   target_visible?: boolean;
-  highlight_role?: 'score' | 'assist' | 'possible' | 'none';
+  highlight_role?: 'score' | 'assist' | 'possible' | 'manual' | 'none';
   highlight_confidence?: number;
   involvement_start_frame?: number | null;
   involvement_end_frame?: number | null;
@@ -91,7 +95,7 @@ export interface HighlightClip {
   duration: number;
   shotFrame: number;
   shotTimestamp: number;
-  highlightRole: 'score' | 'assist' | 'possible' | 'none';
+  highlightRole: 'score' | 'assist' | 'possible' | 'manual' | 'none';
   candidateReason?: string;
   candidateSource?: string | null;
   highlightConfidence?: number | null;
@@ -133,6 +137,8 @@ export interface ProgressInfo {
   stage: string;
   status: BackendTaskStatus;
   completed: boolean;
+  processingMode?: ProcessingMode;
+  manualMoments?: number[];
   createdAt?: string;
   updatedAt?: string;
   result?: ProcessingResult;
@@ -184,6 +190,8 @@ export interface OutputFile {
 
 // 视频处理结果
 export interface ProcessingResult {
+  processingMode?: ProcessingMode;
+  manualMoments?: number[];
   task_id?: string;
   status?: TaskStatus;
   output_file?: OutputFile;
@@ -306,6 +314,8 @@ export interface UploadParams {
 // 视频处理参数 - 匹配Flask后端格式
 export interface ProcessParams {
   fileId: string;
+  mode?: ProcessingMode;
+  manualMoments?: number[];
   beforeSeconds?: number;
   afterSeconds?: number;
   targetPlayerBox?: PlayerSelectionBox | null;

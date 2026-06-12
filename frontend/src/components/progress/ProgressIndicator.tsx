@@ -2,27 +2,27 @@ import React from 'react';
 import { Card, Chip, ProgressBar } from '@heroui/react';
 import {
   CircleCheckBig,
+  Clock3,
   FolderCog,
-  ScanSearch,
   Radar,
-  Search,
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
-import type { ProcessingStage, TaskStatus } from '@/types';
+import type { ProcessingMode, ProcessingStage, TaskStatus } from '@/types';
 
 interface ProgressIndicatorProps {
   status: TaskStatus;
   stage: ProcessingStage;
   progress: number;
   message?: string;
+  processingMode?: ProcessingMode;
   currentStep?: string;
   totalSteps?: number;
   estimatedTime?: number;
   className?: string;
 }
 
-const stages: Array<{
+const AUTO_STAGES: Array<{
   key: ProcessingStage;
   title: string;
   description: string;
@@ -30,11 +30,23 @@ const stages: Array<{
 }> = [
   { key: 'uploading', title: '准备任务', description: '初始化本地处理流程并准备进入整段分析。', icon: FolderCog },
   { key: 'analyzing', title: '分析画面', description: '逐帧分析视频内容和目标球员出镜位置。', icon: Radar },
-  { key: 'detecting', title: '检测投篮', description: '识别出手、轨迹和进球结果。', icon: Search },
-  { key: 'attributing', title: '目标归因', description: '确认哪些回合属于目标球员，并自动补出容易漏掉的相关片段。', icon: ScanSearch },
+  { key: 'detecting', title: '检测投篮', description: '识别出手、轨迹和进球结果。', icon: Radar },
+  { key: 'attributing', title: '目标归因', description: '确认哪些回合属于目标球员，并自动补出容易漏掉的相关片段。', icon: Radar },
   { key: 'generating', title: '导出片段', description: '按相关回合切出进球、助攻和系统补充片段。', icon: Sparkles },
   { key: 'finalizing', title: '整理结果', description: '写入片段清单和结果说明，准备最终验收。', icon: WandSparkles },
   { key: 'completed', title: '处理完成', description: '结果已经可查看或下载。', icon: CircleCheckBig },
+];
+
+const MANUAL_STAGES: Array<{
+  key: ProcessingStage;
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}> = [
+  { key: 'uploading', title: '准备任务', description: '检查源视频和导出窗口设置。', icon: FolderCog },
+  { key: 'generating', title: '导出片段', description: '按你选择的时间点逐个切出片段，并整理拼接视频。', icon: Clock3 },
+  { key: 'finalizing', title: '整理结果', description: '正在收尾当前导出任务。', icon: WandSparkles },
+  { key: 'completed', title: '处理完成', description: '手动选择的片段已经可查看或下载。', icon: CircleCheckBig },
 ];
 
 const formatEstimatedTime = (seconds: number) => {
@@ -48,11 +60,13 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   stage,
   progress,
   message,
+  processingMode = 'auto',
   currentStep,
   totalSteps,
   estimatedTime,
   className = '',
 }) => {
+  const stages = processingMode === 'manual' ? MANUAL_STAGES : AUTO_STAGES;
   const currentIndex = Math.max(
     stages.findIndex((item) => item.key === stage),
     0,

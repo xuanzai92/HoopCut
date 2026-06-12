@@ -56,14 +56,14 @@ export const validateProcessingConfig = (config: {
   beforeSeconds: number;
   afterSeconds: number;
 }): { valid: boolean; error?: string } => {
-  // 验证进球前保留时间
-  if (config.beforeSeconds < 1 || config.beforeSeconds > 15) {
-    return { valid: false, error: '进球前保留时间必须在 1 到 15 秒之间' };
+  // 验证片段前保留时间
+  if (config.beforeSeconds < 0 || config.beforeSeconds > 15) {
+    return { valid: false, error: '片段前保留时间必须在 0 到 15 秒之间' };
   }
   
-  // 验证进球后保留时间
-  if (config.afterSeconds < 1 || config.afterSeconds > 10) {
-    return { valid: false, error: '进球后保留时间必须在 1 到 10 秒之间' };
+  // 验证片段后保留时间
+  if (config.afterSeconds < 0 || config.afterSeconds > 10) {
+    return { valid: false, error: '片段后保留时间必须在 0 到 10 秒之间' };
   }
   
   return { valid: true };
