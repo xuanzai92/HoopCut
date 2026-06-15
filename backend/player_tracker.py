@@ -10,14 +10,19 @@ ShotAttribution = Dict[str, object]
 
 TRACKER_IDENTITY_THRESHOLD = 0.58
 TRACKER_HISTOGRAM_FLOOR = 0.42
+TRACKER_TEMPLATE_FLOOR = 0.16
 SEARCH_MATCH_THRESHOLD = 0.62
 SEARCH_HISTOGRAM_FLOOR = 0.46
+SEARCH_TEMPLATE_FLOOR = 0.18
 REVALIDATION_SWITCH_DELTA = 0.10
 LOCAL_REVIEW_MATCH_THRESHOLD = 0.55
 LOCAL_REVIEW_HISTOGRAM_FLOOR = 0.40
 LOCAL_REVIEW_STRONG_SCORE = 0.58
 PARTIAL_ASSIST_EVIDENCE_THRESHOLD = 0.42
 ASSIST_CONFIRM_TOLERANCE = 0.03
+RUNTIME_REFERENCE_TEMPLATE_FLOOR = 0.28
+ADAPTIVE_REFERENCE_HIST_FLOOR = 0.52
+ADAPTIVE_REFERENCE_TEMPLATE_FLOOR = 0.22
 BALL_ALIGNED_SCALE_FACTORS = (0.72, 0.85, 1.0, 1.18, 1.38)
 TEMPLATE_SEARCH_SCALE_FACTORS = (0.78, 0.92, 1.0, 1.12, 1.28)
 
@@ -1016,9 +1021,7 @@ class TargetPlayerTracker:
             if self.reference_template is None:
                 self.reference_template = candidate_template.copy()
 
-        if frame_index is not None and frame_index not in self.reference_sample_frames:
-            self.reference_sample_frames.append(int(frame_index))
-            self.reference_sample_frames.sort()
+        self._record_reference_frame(frame_index)
 
     def _best_template_similarity(self, candidate_template: Optional[np.ndarray]) -> float:
         if candidate_template is None:
@@ -1030,17 +1033,39 @@ class TargetPlayerTracker:
 
         return max(_template_similarity(reference_template, candidate_template) for reference_template in templates)
 
-    def _combined_hist_similarity(self, candidate_hist: Optional[np.ndarray]) -> float:
+    def _reference_hist_similarity(self, candidate_hist: Optional[np.ndarray]) -> float:
         if candidate_hist is None:
             return 0.0
 
         reference_candidates = self.reference_hists or ([self.reference_hist] if self.reference_hist is not None else [])
-        reference_score = max(
+        return max(
             (_hist_similarity(reference_hist, candidate_hist) for reference_hist in reference_candidates),
             default=0.0,
         )
-        adaptive_score = _hist_similarity(self.adaptive_hist, candidate_hist)
-        return float(reference_score * 0.7 + adaptive_score * 0.3)
+
+    def _adaptive_hist_similarity(self, candidate_hist: Optional[np.ndarray]) -> float:
+        if candidate_hist is None:
+            return 0.0
+        return _hist_similarity(self.adaptive_hist, candidate_hist)
+
+    def _record_reference_frame(self, frame_index: Optional[int]) -> None:
+        if frame_index is None:
+            return
+
+        normalized_frame_index = int(frame_index)
+        if normalized_frame_index not in self.reference_sample_frames:
+            self.reference_sample_frames.append(normalized_frame_index)
+            self.reference_sample_frames.sort()
+
+    def _combined_hist_similarity(self, candidate_hist: Optional[np.ndarray]) -> float:
+        if candidate_hist is None:
+            return 0.0
+
+        reference_score = self._reference_hist_similarity(candidate_hist)
+        adaptive_score = self._adaptive_hist_similarity(candidate_hist)
+        if reference_score <= 0.0:
+            return float(adaptive_score)
+        return float(reference_score * 0.85 + adaptive_score * 0.15)
 
     def _update_adaptive_hist(self, candidate_hist: Optional[np.ndarray]):
         if candidate_hist is None:
@@ -1053,13 +1078,24 @@ class TargetPlayerTracker:
         self.adaptive_hist = cv2.addWeighted(self.adaptive_hist, 0.85, candidate_hist, 0.15, 0.0)
         cv2.normalize(self.adaptive_hist, self.adaptive_hist)
 
-    def _score_tracker_candidate(self, frame, bbox: BBox) -> Tuple[float, float]:
-        candidate_hist, _ = self._extract_appearance(frame, bbox)
-        hist_score = self._combined_hist_similarity(candidate_hist)
+    def _score_tracker_candidate(self, frame, bbox: BBox) -> Tuple[float, float, float]:
+        candidate_hist, candidate_template = self._extract_appearance(frame, bbox)
+        reference_hist_score = self._reference_hist_similarity(candidate_hist)
+        adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
+        template_score = self._best_template_similarity(candidate_template)
         anchor_bbox = self.current_bbox or self.last_bbox or self.initial_bbox
         motion_score = self._motion_score(bbox, anchor_bbox)
-        combined_score = hist_score * 0.7 + motion_score * 0.3
-        return float(hist_score), float(combined_score)
+        combined_score = (
+            reference_hist_score * 0.46
+            + template_score * 0.26
+            + adaptive_hist_score * 0.10
+            + motion_score * 0.18
+        )
+        return (
+            float(reference_hist_score),
+            float(template_score),
+            float(combined_score),
+        )
 
     def _reinitialize_tracker(self, frame, bbox: BBox):
         self.tracker = self._create_tracker()
@@ -1103,19 +1139,32 @@ class TargetPlayerTracker:
             if normalized_bbox is None:
                 continue
 
-            candidate_hist, _ = self._extract_appearance(frame, normalized_bbox)
-            hist_score = self._combined_hist_similarity(candidate_hist)
+            candidate_hist, candidate_template = self._extract_appearance(frame, normalized_bbox)
+            reference_hist_score = self._reference_hist_similarity(candidate_hist)
+            adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
+            template_score = self._best_template_similarity(candidate_template)
             motion_score = self._motion_score(normalized_bbox, self.last_bbox or self.current_bbox or self.initial_bbox)
             detector_confidence = min(max(float(weight), 0.0), 2.0) / 2.0
-            score = hist_score * 0.50 + motion_score * 0.25 + detector_confidence * 0.25
+            score = (
+                reference_hist_score * 0.42
+                + template_score * 0.24
+                + adaptive_hist_score * 0.10
+                + motion_score * 0.14
+                + detector_confidence * 0.10
+            )
 
-            if hist_score < SEARCH_HISTOGRAM_FLOOR or score < SEARCH_MATCH_THRESHOLD:
+            if (
+                reference_hist_score < SEARCH_HISTOGRAM_FLOOR
+                or template_score < SEARCH_TEMPLATE_FLOOR
+                or score < SEARCH_MATCH_THRESHOLD
+            ):
                 continue
 
             candidates.append({
                 "bbox": normalized_bbox,
                 "score": float(score),
-                "histScore": float(hist_score),
+                "histScore": float(reference_hist_score),
+                "templateScore": float(template_score),
                 "source": "person-detector",
             })
 
@@ -1171,18 +1220,31 @@ class TargetPlayerTracker:
                     if candidate_bbox is None:
                         continue
 
-                    candidate_hist, _ = self._extract_appearance(frame, candidate_bbox)
-                    hist_score = self._combined_hist_similarity(candidate_hist)
+                    candidate_hist, candidate_template = self._extract_appearance(frame, candidate_bbox)
+                    reference_hist_score = self._reference_hist_similarity(candidate_hist)
+                    adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
+                    template_score = self._best_template_similarity(candidate_template)
                     motion_score = self._motion_score(candidate_bbox, anchor_bbox)
-                    combined_score = float(max_value) * 0.45 + hist_score * 0.40 + motion_score * 0.15
+                    combined_score = (
+                        float(max_value) * 0.28
+                        + reference_hist_score * 0.30
+                        + template_score * 0.24
+                        + adaptive_hist_score * 0.06
+                        + motion_score * 0.12
+                    )
 
-                    if hist_score < SEARCH_HISTOGRAM_FLOOR or combined_score < SEARCH_MATCH_THRESHOLD:
+                    if (
+                        reference_hist_score < SEARCH_HISTOGRAM_FLOOR
+                        or template_score < SEARCH_TEMPLATE_FLOOR
+                        or combined_score < SEARCH_MATCH_THRESHOLD
+                    ):
                         continue
 
                     candidates.append({
                         "bbox": candidate_bbox,
                         "score": float(combined_score),
-                        "histScore": float(hist_score),
+                        "histScore": float(reference_hist_score),
+                        "templateScore": float(template_score),
                         "source": "template-search",
                     })
 
@@ -1230,7 +1292,10 @@ class TargetPlayerTracker:
             anchor_bbox = self.last_bbox or self.current_bbox or self.initial_bbox
 
         candidate = self._search_nearby_target(frame, anchor_bbox)
-        candidate_bbox = candidate["bbox"] if candidate is not None else anchor_bbox
+        if candidate is None:
+            return None
+
+        candidate_bbox = candidate["bbox"]
         normalized_bbox = _normalize_bbox(candidate_bbox, frame.shape[1], frame.shape[0]) if candidate_bbox else None
         if normalized_bbox is None:
             return None
@@ -1277,33 +1342,35 @@ class TargetPlayerTracker:
             return None
 
         candidate_hist, candidate_template = self._extract_appearance(frame, normalized_bbox)
-        hist_score = self._combined_hist_similarity(candidate_hist)
+        reference_hist_score = self._reference_hist_similarity(candidate_hist)
+        adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
         template_score = self._best_template_similarity(candidate_template)
         motion_score = self._motion_score(
             normalized_bbox,
             self.last_bbox or self.current_bbox or self.initial_bbox,
         )
         combined_score = round(
-            hist_score * 0.56
+            reference_hist_score * 0.50
             + template_score * 0.26
-            + motion_score * 0.18,
+            + adaptive_hist_score * 0.10
+            + motion_score * 0.14,
             3,
         )
 
-        if hist_score < TRACKER_HISTOGRAM_FLOOR or combined_score < TRACKER_IDENTITY_THRESHOLD:
+        if (
+            reference_hist_score < TRACKER_HISTOGRAM_FLOOR
+            or template_score < RUNTIME_REFERENCE_TEMPLATE_FLOOR
+            or combined_score < TRACKER_IDENTITY_THRESHOLD
+        ):
             return None
 
-        self._register_reference_appearance(
-            candidate_hist,
-            candidate_template,
-            frame_index=frame_index,
-        )
+        self._record_reference_frame(frame_index)
         self._update_adaptive_hist(candidate_hist)
 
         return {
             "frame": int(frame_index),
             "bbox": normalized_bbox,
-            "histScore": round(float(hist_score), 3),
+            "histScore": round(float(reference_hist_score), 3),
             "templateScore": round(float(template_score), 3),
             "motionScore": round(float(motion_score), 3),
             "score": combined_score,
@@ -1327,6 +1394,7 @@ class TargetPlayerTracker:
 
         tracker_candidate = None
         tracker_hist_score = 0.0
+        tracker_template_score = 0.0
         tracker_score = 0.0
 
         if self.current_bbox is not None and self.tracker is not None:
@@ -1343,9 +1411,10 @@ class TargetPlayerTracker:
                     frame.shape[0],
                 )
                 if normalized_bbox is not None:
-                    tracker_hist_score, tracker_score = self._score_tracker_candidate(frame, normalized_bbox)
+                    tracker_hist_score, tracker_template_score, tracker_score = self._score_tracker_candidate(frame, normalized_bbox)
                     if (
                         tracker_hist_score >= TRACKER_HISTOGRAM_FLOOR
+                        and tracker_template_score >= TRACKER_TEMPLATE_FLOOR
                         and tracker_score >= TRACKER_IDENTITY_THRESHOLD
                     ):
                         tracker_candidate = normalized_bbox
@@ -1369,7 +1438,10 @@ class TargetPlayerTracker:
                     status = "revalidated"
                 else:
                     self._reinitialize_tracker(frame, tracker_candidate)
-                if tracker_hist_score >= 0.55:
+                if (
+                    tracker_hist_score >= ADAPTIVE_REFERENCE_HIST_FLOOR
+                    and tracker_template_score >= ADAPTIVE_REFERENCE_TEMPLATE_FLOOR
+                ):
                     candidate_hist, _ = self._extract_appearance(frame, tracker_candidate)
                     self._update_adaptive_hist(candidate_hist)
             return self._append_history(
@@ -1407,7 +1479,7 @@ class TargetPlayerTracker:
             self.last_bbox,
             False,
             status="lost",
-            confidence=max(tracker_score, tracker_hist_score),
+            confidence=max(tracker_score, tracker_hist_score, tracker_template_score),
             source="guard",
         )
 

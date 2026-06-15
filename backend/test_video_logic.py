@@ -683,6 +683,41 @@ class VideoLogicTests(unittest.TestCase):
 
         self.assertEqual(review_candidates, [])
 
+    def test_select_target_review_candidates_skips_local_score_without_target_link(self):
+        detector = object.__new__(BasketballShotDetector)
+
+        review_candidates = detector._select_target_review_candidates(
+            [
+                {
+                    'frame': 210,
+                    'timestamp': 7.0,
+                    'made': False,
+                    'owner': 'unknown',
+                    'owner_confidence': 0.18,
+                    'target_visible': True,
+                    'highlight_role': 'none',
+                    'highlight_confidence': 0.0,
+                    'local_target_visible': False,
+                    'local_owner_confidence': 0.14,
+                    'local_highlight_role': 'score',
+                    'local_highlight_confidence': 0.74,
+                    'local_involvement_start_frame': None,
+                    'local_involvement_end_frame': None,
+                    'local_involvement_start_timestamp': None,
+                    'local_involvement_end_timestamp': None,
+                    'involvement_start_frame': None,
+                    'involvement_end_frame': None,
+                    'involvement_start_timestamp': None,
+                    'involvement_end_timestamp': None,
+                    'score_event_detected': False,
+                },
+            ],
+            target_player_box={'selectionTime': 1.0},
+            tracking_summary={'coverage': 0.82},
+        )
+
+        self.assertEqual(review_candidates, [])
+
     def test_select_target_review_candidates_skips_conflicting_partial_local_assist_context(self):
         detector = object.__new__(BasketballShotDetector)
 
@@ -765,6 +800,40 @@ class VideoLogicTests(unittest.TestCase):
         self.assertEqual(result['selected_shots'][0]['candidate_reason'], 'attempt_target_release')
         self.assertEqual(result['selection_summary']['mode'], 'target_attempt_fallback')
         self.assertEqual(result['diagnostics']['outcome'], 'target_attempt_fallback')
+
+    def test_select_target_attempt_fallbacks_skip_visibility_only_context(self):
+        detector = object.__new__(BasketballShotDetector)
+
+        fallback_candidates = detector._select_target_attempt_fallbacks(
+            [
+                {
+                    'frame': 210,
+                    'timestamp': 7.0,
+                    'made': False,
+                    'owner': 'unknown',
+                    'owner_confidence': 0.12,
+                    'target_visible': True,
+                    'highlight_role': 'none',
+                    'highlight_confidence': 0.0,
+                    'local_target_visible': True,
+                    'local_owner_confidence': 0.12,
+                    'local_highlight_role': 'none',
+                    'local_highlight_confidence': 0.0,
+                    'local_involvement_start_frame': None,
+                    'local_involvement_end_frame': None,
+                    'local_involvement_start_timestamp': None,
+                    'local_involvement_end_timestamp': None,
+                    'involvement_start_frame': None,
+                    'involvement_end_frame': None,
+                    'involvement_start_timestamp': None,
+                    'involvement_end_timestamp': None,
+                    'score_event_detected': False,
+                },
+            ],
+            target_player_box={'selectionTime': 1.0},
+        )
+
+        self.assertEqual(fallback_candidates, [])
 
     def test_detect_shots_with_clips_keeps_user_selected_target_when_retry_candidates_exist(self):
         detector = object.__new__(BasketballShotDetector)
@@ -2250,6 +2319,19 @@ class VideoLogicTests(unittest.TestCase):
         self.assertGreaterEqual(len(tracker.reference_hists), 1)
         self.assertGreaterEqual(len(tracker.reference_templates), 1)
 
+    def test_tracker_add_reference_sample_requires_search_candidate(self):
+        tracker = self._build_local_review_tracker()
+        tracker._search_nearby_target = Mock(return_value=None)
+
+        frame = np.zeros((240, 240, 3), dtype=np.uint8)
+        cv2.rectangle(frame, (69, 40), (129, 180), (20, 80, 220), -1)
+        cv2.rectangle(frame, (87, 70), (111, 108), (255, 255, 255), -1)
+
+        sample = tracker.add_reference_sample(frame, frame_index=12, anchor_bbox=(60, 40, 60, 140))
+
+        self.assertIsNone(sample)
+        self.assertEqual(tracker.reference_sample_frames, [0])
+
     def test_tracker_register_tracking_sample_keeps_stable_runtime_reference(self):
         tracker = self._build_local_review_tracker()
         tracker.current_bbox = (66, 42, 60, 140)
@@ -2287,6 +2369,30 @@ class VideoLogicTests(unittest.TestCase):
 
         self.assertIsNone(sample)
         self.assertNotIn(22, tracker.reference_sample_frames)
+
+    def test_tracker_update_marks_drifted_candidate_as_lost(self):
+        tracker = self._build_local_review_tracker()
+        tracker.current_bbox = (66, 42, 60, 140)
+        tracker.last_bbox = tracker.current_bbox
+        tracker.start_frame = 0
+        tracker.start_time = 0.0
+        tracker.revalidate_interval = 6
+        tracker.reacquire_interval = 3
+        tracker.last_reacquire_frame = -1
+        tracker.tracker = Mock()
+        tracker.tracker.update.return_value = (True, (78, 44, 60, 140))
+        tracker._should_reacquire = lambda frame_index: False
+
+        frame = np.zeros((240, 240, 3), dtype=np.uint8)
+        cv2.rectangle(frame, (78, 44), (138, 184), (40, 200, 60), -1)
+        cv2.rectangle(frame, (94, 72), (122, 118), (0, 0, 0), -1)
+
+        record = tracker.update(frame, frame_index=30)
+
+        self.assertIsNotNone(record)
+        self.assertFalse(record['visible'])
+        self.assertEqual(record['status'], 'lost')
+        self.assertEqual(tracker.guarded_switches, 1)
 
     def test_related_shots_skip_low_signal_possible_when_confirmed_highlight_exists(self):
         detector = object.__new__(BasketballShotDetector)

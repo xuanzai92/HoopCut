@@ -31,6 +31,7 @@ class BasketballShotDetector:
     DUAL_SIGNAL_ASSIST_PROMOTION_BOOST = 0.06
     DUAL_SIGNAL_ASSIST_PROMOTION_THRESHOLD = 0.58
     BACKFILLED_MADE_SCORE_THRESHOLD = 0.68
+    LOCAL_SCORE_REVIEW_LINK_THRESHOLD = 0.52
     ATTEMPT_REVIEW_PRIMARY_THRESHOLD = 0.58
     ATTEMPT_REVIEW_FALLBACK_THRESHOLD = 0.48
     HIGH_SIGNAL_REVIEW_REASONS = {
@@ -313,6 +314,14 @@ class BasketballShotDetector:
         score_event_detected = bool(shot.get('score_event_detected'))
         has_partial_local_assist = self._has_partial_local_assist_evidence(shot)
         has_partial_global_assist = self._has_partial_global_assist_evidence(shot)
+        has_target_link = (
+            owner == 'target'
+            or owner_confidence >= self.LOCAL_SCORE_REVIEW_LINK_THRESHOLD
+            or local_owner_confidence >= self.LOCAL_SCORE_REVIEW_LINK_THRESHOLD
+            or shot.get('involvement_start_frame') is not None
+            or shot.get('local_involvement_start_frame') is not None
+            or (score_event_detected and (target_visible or local_target_visible))
+        )
 
         candidate_score = 0.0
         if owner == 'target':
@@ -346,7 +355,11 @@ class BasketballShotDetector:
             candidate_score += 0.05
 
         reason = 'attempt_target_context'
-        if local_role == 'score' and local_highlight_confidence >= 0.52:
+        if (
+            local_role == 'score'
+            and local_highlight_confidence >= 0.52
+            and has_target_link
+        ):
             reason = 'attempt_local_score_window'
         elif (
             local_role == 'assist'
@@ -440,12 +453,17 @@ class BasketballShotDetector:
         for shot in all_shots:
             if not (
                 shot.get('owner') == 'target'
-                or shot.get('target_visible')
-                or shot.get('local_target_visible')
                 or float(shot.get('owner_confidence') or 0.0) >= 0.25
                 or float(shot.get('local_owner_confidence') or 0.0) >= 0.25
                 or shot.get('involvement_start_frame') is not None
                 or shot.get('local_involvement_start_frame') is not None
+                or (
+                    bool(shot.get('score_event_detected'))
+                    and (
+                        shot.get('target_visible')
+                        or shot.get('local_target_visible')
+                    )
+                )
             ):
                 continue
 
