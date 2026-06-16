@@ -141,6 +141,66 @@ def clean_hoop_pos(hoop_pos):
     return hoop_pos
 
 
+def _resolve_hoop_anchor(hoop_pos, recent_window: int = 8):
+    if not hoop_pos:
+        return None
+
+    recent_samples = hoop_pos[-recent_window:]
+    xs = [sample[0][0] for sample in recent_samples]
+    ys = [sample[0][1] for sample in recent_samples]
+    widths = [sample[2] for sample in recent_samples]
+    heights = [sample[3] for sample in recent_samples]
+    confidences = [sample[4] for sample in recent_samples]
+
+    return (
+        (int(round(float(np.median(xs)))), int(round(float(np.median(ys))))),
+        int(recent_samples[-1][1]),
+        int(round(float(np.median(widths)))),
+        int(round(float(np.median(heights)))),
+        float(sum(confidences) / max(len(confidences), 1)),
+    )
+
+
+def select_best_hoop_candidate(
+    hoop_candidates,
+    hoop_history,
+    max_anchor_distance_ratio: float = 3.2,
+    recent_anchor_gap_frames: int = 18,
+):
+    if not hoop_candidates:
+        return None
+
+    if not hoop_history:
+        return max(hoop_candidates, key=lambda candidate: float(candidate[4]))
+
+    anchor_sample = _resolve_hoop_anchor(hoop_history)
+    if anchor_sample is None:
+        return max(hoop_candidates, key=lambda candidate: float(candidate[4]))
+
+    anchor_center, anchor_frame, anchor_width, anchor_height, _ = anchor_sample
+    current_frame = max(int(candidate[1]) for candidate in hoop_candidates)
+    anchor_gap = max(current_frame - int(anchor_frame), 0)
+    anchor_distance_limit = max(anchor_width, anchor_height, 1) * max_anchor_distance_ratio
+
+    nearby_candidates = []
+    for candidate in hoop_candidates:
+        distance = calculate_distance(candidate[0], anchor_center)
+        if distance > anchor_distance_limit:
+            continue
+
+        proximity_score = max(0.0, 1.0 - (distance / max(anchor_distance_limit, 1.0)))
+        candidate_score = float(candidate[4]) + proximity_score * 0.24
+        nearby_candidates.append((candidate_score, candidate))
+
+    if nearby_candidates:
+        return max(nearby_candidates, key=lambda item: item[0])[1]
+
+    if anchor_gap <= recent_anchor_gap_frames:
+        return None
+
+    return max(hoop_candidates, key=lambda candidate: float(candidate[4]))
+
+
 
 # def detect_up(ball_positions: List, hoop_pos: Tuple[int, int]) -> bool:
 #     """

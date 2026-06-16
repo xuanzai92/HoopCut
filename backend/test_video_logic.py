@@ -6,7 +6,13 @@ import numpy as np
 
 from player_tracker import TargetPlayerTracker, classify_shot_involvement, review_shot_with_local_window
 from shot_detector_video import BasketballShotDetector
-from utils import find_recent_down_frame, find_recent_score_event, find_recent_up_frame, score
+from utils import (
+    find_recent_down_frame,
+    find_recent_score_event,
+    find_recent_up_frame,
+    score,
+    select_best_hoop_candidate,
+)
 from video_processor import VideoProcessor
 
 
@@ -31,6 +37,7 @@ class VideoLogicTests(unittest.TestCase):
     def _build_local_review_tracker(self):
         tracker = object.__new__(TargetPlayerTracker)
         tracker.initial_bbox = (60, 40, 60, 140)
+        tracker.trusted_bbox = tracker.initial_bbox
         tracker.last_bbox = tracker.initial_bbox
         tracker.current_bbox = tracker.initial_bbox
         tracker.history = []
@@ -147,6 +154,34 @@ class VideoLogicTests(unittest.TestCase):
 
         self.assertEqual(find_recent_up_frame(ball_positions, hoop_positions), 18)
         self.assertEqual(find_recent_down_frame(ball_positions, hoop_positions, after_frame=18), 21)
+
+    def test_select_best_hoop_candidate_prefers_recent_anchor_over_distant_false_positive(self):
+        hoop_history = [
+            ((242, 208), 100, 45, 47, 0.89),
+            ((243, 208), 101, 45, 47, 0.90),
+            ((242, 207), 102, 45, 47, 0.88),
+        ]
+        frame_candidates = [
+            ((242, 208), 103, 45, 47, 0.62),
+            ((1176, 258), 103, 35, 29, 0.91),
+        ]
+
+        selected = select_best_hoop_candidate(frame_candidates, hoop_history)
+
+        self.assertEqual(selected, frame_candidates[0])
+
+    def test_select_best_hoop_candidate_allows_relocation_after_anchor_expires(self):
+        hoop_history = [
+            ((242, 208), 100, 45, 47, 0.89),
+            ((243, 208), 101, 45, 47, 0.90),
+        ]
+        frame_candidates = [
+            ((1176, 258), 140, 35, 29, 0.91),
+        ]
+
+        selected = select_best_hoop_candidate(frame_candidates, hoop_history)
+
+        self.assertEqual(selected, frame_candidates[0])
 
     def test_assist_attribution_returns_pass_evidence_window(self):
         ball_positions = [
@@ -828,6 +863,41 @@ class VideoLogicTests(unittest.TestCase):
                     'involvement_start_timestamp': None,
                     'involvement_end_timestamp': None,
                     'score_event_detected': False,
+                },
+            ],
+            target_player_box={'selectionTime': 1.0},
+        )
+
+        self.assertEqual(fallback_candidates, [])
+
+    def test_select_target_attempt_fallbacks_skip_score_event_without_target_link(self):
+        detector = object.__new__(BasketballShotDetector)
+
+        fallback_candidates = detector._select_target_attempt_fallbacks(
+            [
+                {
+                    'frame': 1897,
+                    'release_frame': 1869,
+                    'timestamp': 63.25,
+                    'made': False,
+                    'owner': 'unknown',
+                    'owner_confidence': 0.0,
+                    'target_visible': False,
+                    'highlight_role': 'none',
+                    'highlight_confidence': 0.0,
+                    'local_target_visible': False,
+                    'local_owner_confidence': 0.0,
+                    'local_highlight_role': 'none',
+                    'local_highlight_confidence': 0.0,
+                    'local_involvement_start_frame': None,
+                    'local_involvement_end_frame': None,
+                    'local_involvement_start_timestamp': None,
+                    'local_involvement_end_timestamp': None,
+                    'involvement_start_frame': None,
+                    'involvement_end_frame': None,
+                    'involvement_start_timestamp': None,
+                    'involvement_end_timestamp': None,
+                    'score_event_detected': True,
                 },
             ],
             target_player_box={'selectionTime': 1.0},
@@ -2150,6 +2220,34 @@ class VideoLogicTests(unittest.TestCase):
         self.assertEqual(review['owner'], 'target')
         self.assertEqual(review['highlight_role'], 'score')
 
+    def test_local_review_rejects_release_window_when_ball_never_reaches_target(self):
+        tracker = self._build_local_review_tracker()
+        tracker.get_box_at_frame = lambda frame_index, max_gap=12: tracker.initial_bbox
+        frame_buffer = {}
+        ball_positions = []
+
+        for frame_index, ball_point in ((28, (20, 20)), (31, (22, 22)), (34, (24, 24))):
+            frame_buffer[frame_index] = self._build_local_review_frame(
+                ball_point=ball_point,
+                width=240,
+                height=240,
+            )
+            ball_positions.append((ball_point, frame_index, 12, 12, 0.95))
+
+        review = review_shot_with_local_window(
+            ball_positions,
+            frame_buffer,
+            tracker,
+            shot_release_frame=35,
+        )
+
+        self.assertEqual(review['owner'], 'unknown')
+        self.assertFalse(review['target_visible'])
+        self.assertEqual(review['highlight_role'], 'none')
+        self.assertEqual(review['highlight_confidence'], 0.0)
+        self.assertIsNone(review['involvement_start_frame'])
+        self.assertIsNone(review['involvement_end_frame'])
+
     def test_local_review_supports_assist_with_coherent_receiver_path(self):
         tracker = self._build_local_review_tracker()
         frame_buffer = {}
@@ -2374,6 +2472,7 @@ class VideoLogicTests(unittest.TestCase):
         tracker = self._build_local_review_tracker()
         tracker.current_bbox = (66, 42, 60, 140)
         tracker.last_bbox = tracker.current_bbox
+        tracker.trusted_bbox = (60, 40, 60, 140)
         tracker.start_frame = 0
         tracker.start_time = 0.0
         tracker.revalidate_interval = 6
@@ -2393,6 +2492,55 @@ class VideoLogicTests(unittest.TestCase):
         self.assertFalse(record['visible'])
         self.assertEqual(record['status'], 'lost')
         self.assertEqual(tracker.guarded_switches, 1)
+
+    def test_tracker_effective_motion_score_penalizes_cumulative_drift_from_trusted_anchor(self):
+        tracker = self._build_local_review_tracker()
+        tracker.current_bbox = (652, 298, 69, 144)
+        tracker.last_bbox = tracker.current_bbox
+        tracker.trusted_bbox = (708, 298, 68, 143)
+
+        local_motion, trusted_motion, effective_motion = tracker._effective_motion_score(
+            (646, 299, 69, 144)
+        )
+
+        self.assertGreater(local_motion, 0.9)
+        self.assertLess(trusted_motion, 0.75)
+        self.assertEqual(effective_motion, trusted_motion)
+
+    def test_tracker_refreshes_trusted_bbox_for_high_confidence_tracking_motion(self):
+        tracker = self._build_local_review_tracker()
+        tracker.current_bbox = (691, 300, 69, 144)
+        tracker.last_bbox = tracker.current_bbox
+        tracker.trusted_bbox = (708, 298, 68, 143)
+
+        self.assertTrue(
+            tracker._should_refresh_trusted_tracking_bbox(
+                (708, 298, 68, 143),
+                hist_score=0.82,
+                template_score=0.41,
+            )
+        )
+
+    def test_tracker_does_not_refresh_trusted_bbox_for_weak_or_far_tracking_motion(self):
+        tracker = self._build_local_review_tracker()
+        tracker.current_bbox = (652, 298, 69, 144)
+        tracker.last_bbox = tracker.current_bbox
+        tracker.trusted_bbox = (708, 298, 68, 143)
+
+        self.assertFalse(
+            tracker._should_refresh_trusted_tracking_bbox(
+                (646, 299, 69, 144),
+                hist_score=0.82,
+                template_score=0.41,
+            )
+        )
+        self.assertFalse(
+            tracker._should_refresh_trusted_tracking_bbox(
+                (708, 298, 68, 143),
+                hist_score=0.40,
+                template_score=0.41,
+            )
+        )
 
     def test_related_shots_skip_low_signal_possible_when_confirmed_highlight_exists(self):
         detector = object.__new__(BasketballShotDetector)

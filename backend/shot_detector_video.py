@@ -13,7 +13,7 @@ from player_tracker import (
 from utils import (
     score, detect_down, detect_up, in_hoop_region,
     find_recent_down_frame, find_recent_score_event, find_recent_up_frame,
-    clean_hoop_pos, clean_ball_pos, get_device
+    clean_hoop_pos, clean_ball_pos, get_device, select_best_hoop_candidate
 )
 from typing import List, Dict, Tuple, Optional
 
@@ -1775,6 +1775,7 @@ class BasketballShotDetector:
             
             for r in results:
                 boxes = r.boxes
+                frame_hoop_candidates = []
                 for box in boxes:
                     # 边界框
                     x1, y1, x2, y2 = box.xyxy[0]
@@ -1801,7 +1802,11 @@ class BasketballShotDetector:
                     
                     # 检测篮筐
                     if conf > 0.3 and current_class == "Basketball Hoop":
-                        hoop_pos.append((center, frame_count, w, h, conf))
+                        frame_hoop_candidates.append((center, frame_count, w, h, conf))
+
+                best_hoop_candidate = select_best_hoop_candidate(frame_hoop_candidates, hoop_pos)
+                if best_hoop_candidate is not None:
+                    hoop_pos.append(best_hoop_candidate)
             
             # 清理位置数据
             ball_pos = clean_ball_pos(ball_pos, frame_count)

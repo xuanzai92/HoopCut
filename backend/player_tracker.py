@@ -23,6 +23,7 @@ ASSIST_CONFIRM_TOLERANCE = 0.03
 RUNTIME_REFERENCE_TEMPLATE_FLOOR = 0.28
 ADAPTIVE_REFERENCE_HIST_FLOOR = 0.52
 ADAPTIVE_REFERENCE_TEMPLATE_FLOOR = 0.22
+TRUSTED_TRACKING_MOTION_FLOOR = 0.82
 BALL_ALIGNED_SCALE_FACTORS = (0.72, 0.85, 1.0, 1.18, 1.38)
 TEMPLATE_SEARCH_SCALE_FACTORS = (0.78, 0.92, 1.0, 1.12, 1.28)
 
@@ -830,6 +831,8 @@ def _find_local_target_match(
             ball_point,
             expected_bbox,
         )
+        if not bool(scored_candidate["inside"]):
+            continue
         if (
             float(scored_candidate["histScore"]) < LOCAL_REVIEW_HISTOGRAM_FLOOR
             or float(scored_candidate["score"]) < LOCAL_REVIEW_MATCH_THRESHOLD
@@ -869,6 +872,7 @@ class TargetPlayerTracker:
         self.current_bbox: Optional[BBox] = None
         self.last_bbox: Optional[BBox] = None
         self.initial_bbox: Optional[BBox] = None
+        self.trusted_bbox: Optional[BBox] = None
         self.history: List[Dict] = []
 
         self.reference_hist: Optional[np.ndarray] = None
@@ -983,6 +987,58 @@ class TargetPlayerTracker:
         scale_score = _bbox_scale_similarity(bbox, anchor_bbox)
         return float(min(1.0, position_score * 0.45 + iou_score * 0.25 + scale_score * 0.30))
 
+    def _effective_motion_score(
+        self,
+        bbox: BBox,
+        local_anchor_bbox: Optional[BBox] = None,
+    ) -> Tuple[float, float, float]:
+        if local_anchor_bbox is None:
+            local_anchor_bbox = self.current_bbox or self.last_bbox or self.initial_bbox
+
+        trusted_anchor_bbox = self.trusted_bbox or self.initial_bbox or local_anchor_bbox
+        local_motion_score = self._motion_score(bbox, local_anchor_bbox)
+        trusted_motion_score = self._motion_score(bbox, trusted_anchor_bbox)
+
+        if (
+            local_anchor_bbox is None
+            or trusted_anchor_bbox is None
+            or trusted_anchor_bbox == local_anchor_bbox
+        ):
+            effective_motion_score = local_motion_score
+        else:
+            # Keep short-term continuity, but do not let it outrun the last
+            # trusted identity anchor and slowly drift onto another player.
+            effective_motion_score = min(local_motion_score, trusted_motion_score)
+
+        return (
+            float(local_motion_score),
+            float(trusted_motion_score),
+            float(effective_motion_score),
+        )
+
+    def _refresh_trusted_bbox(self, bbox: Optional[BBox]) -> None:
+        if bbox is None:
+            return
+        self.trusted_bbox = bbox
+
+    def _should_refresh_trusted_tracking_bbox(
+        self,
+        bbox: BBox,
+        hist_score: float,
+        template_score: float,
+    ) -> bool:
+        if (
+            hist_score < ADAPTIVE_REFERENCE_HIST_FLOOR
+            or template_score < ADAPTIVE_REFERENCE_TEMPLATE_FLOOR
+        ):
+            return False
+
+        _, trusted_motion_score, _ = self._effective_motion_score(
+            bbox,
+            self.current_bbox or self.last_bbox or self.initial_bbox,
+        )
+        return trusted_motion_score >= TRUSTED_TRACKING_MOTION_FLOOR
+
     def _extract_appearance(self, frame, bbox: BBox):
         crop = _crop_from_bbox(frame, bbox)
         return _compute_histogram(crop), _build_template(crop)
@@ -1083,8 +1139,7 @@ class TargetPlayerTracker:
         reference_hist_score = self._reference_hist_similarity(candidate_hist)
         adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
         template_score = self._best_template_similarity(candidate_template)
-        anchor_bbox = self.current_bbox or self.last_bbox or self.initial_bbox
-        motion_score = self._motion_score(bbox, anchor_bbox)
+        _, _, motion_score = self._effective_motion_score(bbox)
         combined_score = (
             reference_hist_score * 0.46
             + template_score * 0.26
@@ -1115,7 +1170,12 @@ class TargetPlayerTracker:
         search_bbox = _normalize_bbox((search_x, search_y, search_width, search_height), frame_width, frame_height)
         return search_bbox
 
-    def _detect_people_candidates(self, frame, search_bbox: BBox) -> List[Dict]:
+    def _detect_people_candidates(
+        self,
+        frame,
+        search_bbox: BBox,
+        anchor_bbox: Optional[BBox],
+    ) -> List[Dict]:
         search_crop = _crop_from_bbox(frame, search_bbox)
         if search_crop.size == 0:
             return []
@@ -1143,7 +1203,7 @@ class TargetPlayerTracker:
             reference_hist_score = self._reference_hist_similarity(candidate_hist)
             adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
             template_score = self._best_template_similarity(candidate_template)
-            motion_score = self._motion_score(normalized_bbox, self.last_bbox or self.current_bbox or self.initial_bbox)
+            _, _, motion_score = self._effective_motion_score(normalized_bbox, anchor_bbox)
             detector_confidence = min(max(float(weight), 0.0), 2.0) / 2.0
             score = (
                 reference_hist_score * 0.42
@@ -1187,7 +1247,7 @@ class TargetPlayerTracker:
         if search_crop.size == 0:
             return None
 
-        candidates = self._detect_people_candidates(frame, search_bbox)
+        candidates = self._detect_people_candidates(frame, search_bbox, anchor_bbox)
 
         if template_enabled:
             search_gray = cv2.cvtColor(search_crop, cv2.COLOR_BGR2GRAY)
@@ -1224,7 +1284,7 @@ class TargetPlayerTracker:
                     reference_hist_score = self._reference_hist_similarity(candidate_hist)
                     adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
                     template_score = self._best_template_similarity(candidate_template)
-                    motion_score = self._motion_score(candidate_bbox, anchor_bbox)
+                    _, _, motion_score = self._effective_motion_score(candidate_bbox, anchor_bbox)
                     combined_score = (
                         float(max_value) * 0.28
                         + reference_hist_score * 0.30
@@ -1267,6 +1327,7 @@ class TargetPlayerTracker:
         self.reference_sample_frames = []
         self._register_reference_appearance(initial_hist, initial_template, frame_index=frame_index)
         self.initial_bbox = initial_bbox
+        self.trusted_bbox = initial_bbox
         self.missing_frames = 0
 
         self._reinitialize_tracker(frame, initial_bbox)
@@ -1289,7 +1350,7 @@ class TargetPlayerTracker:
             return None
 
         if anchor_bbox is None:
-            anchor_bbox = self.last_bbox or self.current_bbox or self.initial_bbox
+            anchor_bbox = self.trusted_bbox or self.last_bbox or self.current_bbox or self.initial_bbox
 
         candidate = self._search_nearby_target(frame, anchor_bbox)
         if candidate is None:
@@ -1310,6 +1371,7 @@ class TargetPlayerTracker:
 
         self._register_reference_appearance(candidate_hist, candidate_template, frame_index=frame_index)
         self._update_adaptive_hist(candidate_hist)
+        self._refresh_trusted_bbox(normalized_bbox)
 
         return {
             "frame": int(frame_index),
@@ -1345,10 +1407,7 @@ class TargetPlayerTracker:
         reference_hist_score = self._reference_hist_similarity(candidate_hist)
         adaptive_hist_score = self._adaptive_hist_similarity(candidate_hist)
         template_score = self._best_template_similarity(candidate_template)
-        motion_score = self._motion_score(
-            normalized_bbox,
-            self.last_bbox or self.current_bbox or self.initial_bbox,
-        )
+        _, _, motion_score = self._effective_motion_score(normalized_bbox)
         combined_score = round(
             reference_hist_score * 0.50
             + template_score * 0.26
@@ -1366,6 +1425,7 @@ class TargetPlayerTracker:
 
         self._record_reference_frame(frame_index)
         self._update_adaptive_hist(candidate_hist)
+        self._refresh_trusted_bbox(normalized_bbox)
 
         return {
             "frame": int(frame_index),
@@ -1426,6 +1486,12 @@ class TargetPlayerTracker:
             self.current_bbox = tracker_candidate
             self.last_bbox = tracker_candidate
             self.missing_frames = 0
+            if self._should_refresh_trusted_tracking_bbox(
+                tracker_candidate,
+                tracker_hist_score,
+                tracker_template_score,
+            ):
+                self._refresh_trusted_bbox(tracker_candidate)
             if self._should_revalidate(frame_index):
                 recalibrated_candidate = self._search_nearby_target(frame, tracker_candidate)
                 if (
@@ -1435,6 +1501,7 @@ class TargetPlayerTracker:
                     tracker_candidate = recalibrated_candidate["bbox"]
                     tracker_score = float(recalibrated_candidate["score"])
                     self._reinitialize_tracker(frame, tracker_candidate)
+                    self._refresh_trusted_bbox(tracker_candidate)
                     status = "revalidated"
                 else:
                     self._reinitialize_tracker(frame, tracker_candidate)
@@ -1444,6 +1511,7 @@ class TargetPlayerTracker:
                 ):
                     candidate_hist, _ = self._extract_appearance(frame, tracker_candidate)
                     self._update_adaptive_hist(candidate_hist)
+                    self._refresh_trusted_bbox(tracker_candidate)
             return self._append_history(
                 frame_index,
                 tracker_candidate,
@@ -1456,13 +1524,17 @@ class TargetPlayerTracker:
         search_candidate = None
         if self._should_reacquire(frame_index):
             self.last_reacquire_frame = frame_index
-            search_candidate = self._search_nearby_target(frame, self.last_bbox or self.current_bbox or self.initial_bbox)
+            search_candidate = self._search_nearby_target(
+                frame,
+                self.trusted_bbox or self.last_bbox or self.current_bbox or self.initial_bbox,
+            )
 
         if search_candidate is not None:
             reacquired_bbox = search_candidate["bbox"]
             self._reinitialize_tracker(frame, reacquired_bbox)
             self.missing_frames = 0
             self.reacquired_count += 1
+            self._refresh_trusted_bbox(reacquired_bbox)
             return self._append_history(
                 frame_index,
                 reacquired_bbox,
@@ -1641,7 +1713,7 @@ def review_shot_with_local_window(
         if latest_release_window
         else _local_window_confidence(release_matches)
     )
-    target_visible = bool(local_matches) or tracker.get_box_at_frame(shot_release_frame, max_gap=6) is not None
+    target_visible = bool(local_matches)
 
     if (
         release_confidence >= 0.64
